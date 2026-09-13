@@ -34,7 +34,7 @@ documentRoutes.get("/ops/document/:id",async c=>{
   requirePermission(c,"resources:read");const doc=await document(db(c),c.req.param("id"));const row=await getResource(db(c),doc.resource_id);const v=view(c);
   const preview=doc.mime_type.startsWith("image/")?`<div class="pad"><img class="doc-image" src="/ops/document/${doc.id}/file" alt="${h(doc.filename)}"></div>`:`<div class="pad">${link(`/ops/document/${doc.id}/file`,t(v,["下载 PDF 核验（私密文件）", "Download PDF for review (private file)"]),"button-link")}</div>`;
   const actions=can(v.role,"review:write")&&["submitted","approved"].includes(doc.status)?panel(t(v,["审核资料", "Review document"]),form(v,`/ops/document/${doc.id}/review`,hidden("version",doc.version)+reasonField(v)+(doc.status==="submitted"?submit(v,["通过", "Approve"],"action","approved"):"")+submit(v,["补件", "Request information"],"action","needs_info")+submit(v,["拒绝", "Reject"],"action","rejected"))):"";
-  return c.html(page(v,"reviews",label(v,doc.document_type),panel(doc.filename,`<dl class="detail"><dt>${h(t(v,["所属档案", "Record"]))}</dt><dd>${link(`/ops/resource/${row.id}`,row.name)}</dd><dt>${h(t(v,["有效至（UTC 日期）", "Valid through (UTC date)"]))}</dt><dd>${h(doc.expires_on)}</dd><dt>${h(t(v,["审核状态", "Review status"]))}</dt><dd>${badge(v,doc.status)}</dd></dl>`+preview)+actions,t(v,["文件仅供授权业务审核。每次读取都会记录审计，不得对外转发。", "Authorized review only. File access is audited. Do not share externally."])));
+  return c.html(page(v,`reviews-${row.kind}`,label(v,doc.document_type),panel(doc.filename,`<dl class="detail"><dt>${h(t(v,["所属档案", "Record"]))}</dt><dd>${link(`/ops/reviews/resource/${row.id}`,row.name)}</dd><dt>${h(t(v,["有效至（UTC 日期）", "Valid through (UTC date)"]))}</dt><dd>${h(doc.expires_on)}</dd><dt>${h(t(v,["审核状态", "Review status"]))}</dt><dd>${badge(v,doc.status)}</dd></dl>`+preview)+actions,t(v,["文件仅供授权业务审核。每次读取都会记录审计，不得对外转发。", "Authorized review only. File access is audited. Do not share externally."]),link(`/ops/reviews/resource/${row.id}`,t(v,["← 返回档案审核", "← Back to record review"]),"button-link")));
 });
 documentRoutes.get("/ops/document/:id/file",async c=>{
   requirePermission(c,"resources:read");const doc=await document(db(c),c.req.param("id"));
@@ -51,5 +51,5 @@ documentRoutes.post("/ops/document/:id/review",async c=>{
   const at=new Date().toISOString();await mutate(db(c),c.get("revision"),actor(c),{action:`document.${action}`,type:"document",id:doc.resource_id,reason:why,before:{documentId:doc.id,status:doc.status},after:{status:action}},[
     {sql:`UPDATE ops_documents SET status=?,version=version+1,updated_at=? WHERE id=? AND ${guard}`,values:[action,at,doc.id]},
     {sql:`UPDATE ops_resources SET status=CASE WHEN status='approved' THEN 'submitted' ELSE status END,version=version+1,updated_at=? WHERE id=? AND ${guard}`,values:[at,doc.resource_id]},
-  ]);return c.redirect(`/ops/resource/${doc.resource_id}?saved=1`,303);
+  ]);return c.redirect(`/ops/reviews/resource/${doc.resource_id}?saved=1`,303);
 });

@@ -28,6 +28,12 @@ try {
   const errors=[];page.on("pageerror",error=>errors.push(error.message));
   await page.goto(origin+"/login");await page.locator("#username").fill("synthetic-owner");await page.locator("#password").fill(password);const signed=page.waitForResponse(response=>response.url()===origin+"/login"&&response.request().method()==="POST");await page.getByRole("button",{name:"登录 / Sign in"}).click();const signedResponse=await signed;assert.equal(signedResponse.status(),303,`Synthetic login: ${(await page.locator("body").innerText()).slice(0,500)}`);await page.waitForURL(origin+"/");
   assert.equal(await page.locator("h1").innerText(),"今天的运营工作台");
+  assert.equal(await page.locator('nav details.nav-group').count(),4);
+  for(const [kind,title]of [["fleet","合作车队"],["driver","司机管理"],["vehicle","车辆管理"],["reviews","审核管理"]]){
+    const group=page.locator(`nav details[data-menu="${kind}"]`);assert.equal(await group.locator('summary').innerText(),title);
+    await group.locator('summary').click();assert.equal(await group.getAttribute('open'),null);
+    await group.locator('summary').focus();await page.keyboard.press('Enter');assert.notEqual(await group.getAttribute('open'),null);
+  }
   await page.screenshot({path:join(destination,"operations-empty-desktop.png"),fullPage:true});
   const overview=await context.request.get(origin+"/api/admin/overview");assert.equal(overview.status(),200);assert.deepEqual((await overview.json()).resources,[]);
   await page.getByRole("link",{name:"English",exact:true}).click();await page.waitForURL(origin+"/");assert.equal(await page.locator("h1").innerText(),"Your operations workspace");
@@ -40,7 +46,13 @@ try {
   const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOdoAAAAASUVORK5CYII=","base64");await upload.locator('[name="file"]').setInputFiles({name:"synthetic-evidence.png",mimeType:"image/png",buffer:image});await upload.locator('[name="reason"]').fill("Submit synthetic evidence");await upload.getByRole("button",{name:"Upload for review"}).click();await page.waitForURL(/saved=1$/);
   await page.getByRole("link",{name:"synthetic-evidence.png",exact:true}).click();await page.locator(".doc-image").waitFor();assert(await page.locator(".doc-image").evaluate(image=>image.complete&&image.naturalWidth>0));
   const review=page.locator('form[action$="/review"]');await review.locator('[name="reason"]').fill("Synthetic document verified");await review.getByRole("button",{name:"Approve",exact:true}).click();await page.waitForURL(/saved=1$/);
+  assert(new URL(page.url()).pathname.startsWith('/ops/reviews/resource/'));
+  assert.equal(await page.locator('nav [aria-current="page"]').getAttribute('href'),'/ops/reviews/fleet');
+  await page.getByRole('link',{name:'View / maintain record',exact:true}).click();
   let state=page.locator('form[action$="/status"]');await state.locator('[name="reason"]').fill("Submit synthetic fleet");await state.getByRole("button",{name:"Submit for review"}).click();await page.waitForURL(/saved=1$/);
+  assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).count(),0);
+  await page.getByRole('link',{name:'Open review details',exact:true}).click();
+  assert.equal(await page.locator('form[action$="/save"]').count(),0);
   state=page.locator('form[action$="/status"]');await state.locator('[name="reason"]').fill("All required checks passed");await state.getByRole("button",{name:"Approve",exact:true}).click();await page.waitForURL(/saved=1$/);assert(await page.getByText("Records ready",{exact:true}).isVisible());
   await page.screenshot({path:join(destination,"operations-fleet-reviewed.png"),fullPage:true});
   assert.equal((await db.prepare("SELECT status FROM ops_resources WHERE id=?").bind(fleetId).first()).status,"approved");
@@ -52,7 +64,7 @@ try {
   // Mobile layout, both languages, real populated navigation and auth boundary.
   for(const [name,width,height,language]of [["desktop",1440,1000,"en"],["mobile",390,844,"zh"],["narrow",320,720,"en"]]){
     await page.setViewportSize({width,height});await page.goto(origin+`/ops/language/${language}`);
-    for(const [section,path]of [["overview","/"],["fleets","/ops/resources/fleet"],["review","/ops/reviews"],["rules","/ops/configs"],["staff","/ops/staff"],["audit","/ops/audit"]]){
+    for(const [section,path]of [["overview","/"],["fleets","/ops/resources/fleet"],["drivers","/ops/resources/driver"],["vehicles","/ops/resources/vehicle"],["review","/ops/reviews"],["review-fleet","/ops/reviews/fleet?status=approved"],["review-driver","/ops/reviews/driver"],["review-vehicle","/ops/reviews/vehicle"],["rules","/ops/configs"],["staff","/ops/staff"],["audit","/ops/audit"]]){
       const res=await page.goto(origin+path);assert.equal(res.status(),200,`${name} ${section}`);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),`${name} ${section} overflow`);await page.screenshot({path:join(destination,`operations-${section}-${name}.png`),fullPage:true});
     }
   }
