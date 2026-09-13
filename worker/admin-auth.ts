@@ -1,48 +1,68 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
-import { z } from "zod";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { Buffer } from "node:buffer";
+import { dummyPasswordHash, verifyPassword } from "./admin-password";
 
-const configSchema = z.object({
-  issuer: z.string().regex(/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/),
-  audience: z.string().regex(/^[a-f0-9]{64}$/),
-  ownerEmailSha256: z.string().regex(/^[a-f0-9]{64}$/),
-  notBefore: z.number().int().nonnegative()
-}).strict();
-export type AdminIdentity = { role: "owner"; auditId: string; permissions: readonly ["admin:readiness:read"] };
-let cachedIssuer: string | undefined;
-let cachedKeys: JWTVerifyGetKey | undefined;
-
-function keysFor(issuer: string): JWTVerifyGetKey {
-  if (cachedIssuer !== issuer || !cachedKeys) {
-    cachedIssuer = issuer;
-    cachedKeys = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`), {
-      timeoutDuration: 5000, cooldownDuration: 30000, cacheMaxAge: 600000
-    });
-  }
-  return cachedKeys;
+export const sessionSeconds = 8 * 60 * 60;
+export const idleSeconds = 30 * 60;
+export const token = () => Buffer.from(randomBytes(32)).toString("hex");
+export const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+export function equalToken(a?: string, b?: string): boolean {
+  return !!a && !!b && /^[a-f0-9]{64}$/.test(a) && /^[a-f0-9]{64}$/.test(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
-export async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-}
+export const fingerprint = (value: string, secret: string) => createHmac("sha256", secret).update(value).digest("hex");
+export type AdminUser = { id: string; username: string; password_hash: string; credential_version: number; status: string };
+export type AdminSession = { user_id: string; token_hash: string; credential_version: number; expires_at: number; last_seen_at: number; must_change_password: number };
+const now = () => Math.floor(Date.now() / 1000);
 
-// Test-only dependency injection supplies real signing keys; HTTP callers cannot select keys.
-export async function authenticateAdmin(token: string | undefined, rawConfig: string | undefined, testKeys?: JWTVerifyGetKey): Promise<AdminIdentity | null> {
-  if (!token || token.length > 16384 || !rawConfig || rawConfig.length > 2048) return null;
-  try {
-    const config = configSchema.parse(JSON.parse(rawConfig));
-    const { payload } = await jwtVerify(token, testKeys ?? keysFor(config.issuer), {
-      issuer: config.issuer, audience: config.audience, algorithms: ["RS256"],
-      requiredClaims: ["iss", "aud", "iat", "exp", "sub", "email", "type"],
-      maxTokenAge: "1h", clockTolerance: 5
-    });
-    if (payload.type !== "app" || typeof payload.sub !== "string" || !payload.sub.length || payload.sub.length > 256) return null;
-    if (typeof payload.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email) || payload.email.length > 254) return null;
-    if (typeof payload.iat !== "number" || typeof payload.exp !== "number" || payload.iat < config.notBefore || payload.exp <= payload.iat || payload.exp - payload.iat > 3600) return null;
-    if (await sha256(payload.email.toLowerCase()) !== config.ownerEmailSha256) return null;
-    // Roles never come from headers, cookies, query strings or the token's custom role claim.
-    return { role: "owner", auditId: await sha256(`${config.issuer}|${payload.sub}`), permissions: ["admin:readiness:read"] };
-  } catch {
-    // Invalid configuration, verification failures and key-service outages all deny access.
-    return null;
+export async function consumeLimit(db: D1Database, key: string, maximum: number, at = now()): Promise<boolean> {
+  const result = await db.prepare(`INSERT INTO admin_auth_limits (key, count, expires_at) VALUES (?, 1, ?)
+    ON CONFLICT(key) DO UPDATE SET count = CASE WHEN expires_at <= ? THEN 1 ELSE count + 1 END,
+    expires_at = CASE WHEN expires_at <= ? THEN excluded.expires_at ELSE expires_at END RETURNING count`)
+    .bind(key, at + 900, at, at).first<{ count: number }>();
+  return !!result && result.count <= maximum;
+}
+export async function audit(db: D1Database, event: string, ipHash: string, userId: string | null = null) {
+  await db.prepare("INSERT INTO admin_auth_events (event, user_id, ip_hash, created_at) VALUES (?, ?, ?, ?)")
+    .bind(event, userId, ipHash, now()).run();
+}
+export async function login(db: D1Database, username: string, password: string, ipHash: string) {
+  if (!await consumeLimit(db, `ip:${ipHash}`, 20)) return { kind: "limited" as const };
+  const normalized = username.trim().toLowerCase();
+  const user = await db.prepare("SELECT id, username, password_hash, credential_version, status FROM admin_users WHERE username = ? OR email_sha256 = ? LIMIT 1")
+    .bind(normalized, digest(normalized)).first<AdminUser>();
+  const accountKey = user ? `user:${user.id}` : `unknown:${digest(normalized)}`;
+  if (!await consumeLimit(db, accountKey, 5)) {
+    await audit(db, "login_limited", ipHash);
+    return { kind: "limited" as const };
   }
+  const correct = verifyPassword(password, user?.password_hash ?? dummyPasswordHash);
+  if (!correct || !user || user.status !== "active") {
+    await audit(db, "login_failed", ipHash);
+    return { kind: "invalid" as const };
+  }
+  const raw = token(); const at = now();
+  // Prevent a concurrent reset/disable from issuing a session for stale credentials.
+  const inserted = await db.prepare(`INSERT INTO admin_sessions (token_hash, user_id, credential_version, created_at, last_seen_at, expires_at)
+    SELECT ?, id, credential_version, ?, ?, ? FROM admin_users WHERE id = ? AND credential_version = ? AND status = 'active'`)
+    .bind(digest(raw), at, at, at + sessionSeconds, user.id, user.credential_version).run();
+  if (inserted.meta.changes !== 1) return { kind: "invalid" as const };
+  await audit(db, "login_success", ipHash, user.id);
+  return { kind: "ok" as const, token: raw };
+}
+export async function getSession(db: D1Database, raw?: string, at = now()): Promise<AdminSession | null> {
+  if (!raw || !/^[a-f0-9]{64}$/.test(raw)) return null;
+  const session = await db.prepare(`SELECT s.*, u.must_change_password FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.expires_at > ? AND s.last_seen_at > ? AND u.status = 'active' AND u.credential_version = s.credential_version`)
+    .bind(digest(raw), at, at - idleSeconds).first<AdminSession>();
+  if (!session) return null;
+  if (at - session.last_seen_at >= 60) await db.prepare("UPDATE admin_sessions SET last_seen_at = MAX(last_seen_at, ?) WHERE token_hash = ?")
+    .bind(at, session.token_hash).run();
+  return session;
+}
+export async function cleanAuthData(db: D1Database, at = now()) {
+  await db.batch([
+    db.prepare("DELETE FROM admin_sessions WHERE expires_at <= ? OR last_seen_at <= ?").bind(at, at - idleSeconds),
+    db.prepare("DELETE FROM admin_auth_limits WHERE expires_at <= ?").bind(at),
+    db.prepare("DELETE FROM admin_auth_events WHERE created_at < ?").bind(at - 30 * 86400),
+  ]);
 }
