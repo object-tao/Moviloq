@@ -1,3 +1,15 @@
+export const adminReadyHtml = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Moviloq · 管理工作台</title><link rel="stylesheet" href="/admin.css"></head>
+<body><header><a class="brand" href="https://moviloq.com"><span class="mark">M</span>moviloq</a><a class="status" href="/cdn-cgi/access/logout">退出 / Sign out</a></header>
+<main><div class="eyebrow">MOVILOQ / ADMINISTRATION</div><h1>欢迎进入<br>管理工作台。</h1><p class="intro">管理员身份验证已通过。这里是后台的安全状态页，业务管理模块仍在开发中。</p><p class="english" lang="en">Your administrator identity has been verified. This is the access-readiness workspace; business management is not enabled yet.</p>
+<section class="access-card" aria-labelledby="access-title"><div class="lock" aria-hidden="true">&#128274;</div><div><span class="status">身份已验证 · Access verified</span><h2 id="access-title">安全访问已建立</h2><p>当前角色：平台所有者。已开放安全状态查看，不开放客户资料、订单、司机、车队或资金操作。</p><p class="english" lang="en">Role: platform owner. Access is limited to this readiness page. No customer, order, partner or payment operations are available.</p></div></section>
+<div class="boundaries"><div><span>01 / PLATFORM</span><h3>平台运营后台</h3><p>审核中心与业务审计待开发<br><span lang="en">Reviews and business audit: planned</span></p></div><div><span>02 / DRIVERS</span><h3>司机端</h3><p>入驻、资质审核与接单待开发<br><span lang="en">Onboarding and delivery jobs: planned</span></p></div><div><span>03 / FLEETS</span><h3>车队端</h3><p>成员、车辆与内部调度待开发<br><span lang="en">Members, vehicles and dispatch: planned</span></p></div></div>
+<p class="english">当前未连接业务数据库，不展示模拟运营数据。司机与车队不能通过此入口注册管理员。<br><span lang="en">No business database is connected. No fabricated metrics. Administrator registration is not public.</span></p>
+<a class="return-link" href="https://moviloq.com">返回客户网站 / Customer website →</a></main><footer><span>Moviloq · Frankfurt am Main</span><span>Access readiness / Business functions pending</span></footer></body></html>`;
+
+export const adminDeniedHtml = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Moviloq · 访问受限</title><link rel="stylesheet" href="/admin.css"></head><body><main><div class="eyebrow">MOVILOQ / ADMINISTRATION</div><h1>访问未获授权</h1><p>无法验证当前管理员会话。请退出后使用获授权的账号重新登录；如仍有问题，请联系平台所有者。</p><p lang="en">Administrator access could not be verified. Sign out and sign in with an authorized account.</p><a class="return-link" href="/cdn-cgi/access/logout">退出并重新登录 / Sign out</a></main></body></html>`;
+
 export const adminEntryHtml = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Moviloq · 管理后台</title><link rel="stylesheet" href="/admin.css"></head>
 <body><header><a class="brand" href="https://moviloq.com"><span class="mark">M</span>moviloq<span class="brand-label">ADMIN</span></a><span class="private-label">受限管理入口 · Restricted</span></header>

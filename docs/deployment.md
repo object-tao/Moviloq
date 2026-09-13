@@ -13,6 +13,8 @@ Create `production` and `preview` environments in the GitHub repository. Add the
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
+Production also needs `MOVILOQ_ADMIN_OWNER_SHA256`, the private SHA-256 fingerprint of the approved lowercase administrator email. The pre/post-deployment Access checks compare it with the actual exact-email allowlist without logging the identity. The deployment token needs account-scoped Access organization/identity-provider and application/policy **Read** permissions for these checks; one-time Access setup uses **Edit/Write** permissions separately. Never put administrator identities or token values in this repository.
+
 Automatic publishing does not require manual environment approval. The production workflow accepts only the `main` branch; fork pull requests never receive deployment credentials.
 
 ## 3. Enable the workflows
@@ -53,7 +55,9 @@ Custom domains for `moviloq.com` and `www.moviloq.com` are declared in the produ
 
 ## Release and recovery
 
-The independent administration Worker is configured in `wrangler.admin.jsonc`. `pnpm check` also builds it with Wrangler `--dry-run`; production deployment publishes it explicitly after the customer Worker. It is not part of customer PR preview domains and carries no customer database/service binding. `/api/health` reports its locked mode, while management pages/APIs return 403 until a future, separately tested authentication implementation. Production CI verifies this fail-closed behaviour using `scripts/admin-smoke.mjs`. Do not treat the 403 response as a broken customer deployment or remove it to make a generic 200-only check pass.
+The independent administration Worker is configured in `wrangler.admin.jsonc`. `pnpm check` also builds it with Wrangler `--dry-run`; production deployment publishes it explicitly after the customer Worker. It is not part of customer PR preview domains and carries no customer database/service binding. Cloudflare Access protects the whole admin hostname, including health and assets. After JWT and exact-owner verification, only `/`, `/api/health` and `/api/admin/session` expose readiness information. All business/write operations remain 403. A missing origin secret keeps the original locked entry; malformed secrets and invalid sessions fail closed.
+
+The `ADMIN_AUTH_CONFIG` Worker secret contains issuer, audience, approved email fingerprint and session cutoff, never the Cloudflare API token. It is configured outside source control and preserved on deployment. `verify-admin-access.mjs` checks policy drift, MFA, session settings, private origin binding and disabled alternative URLs before and after production deployment. `admin-smoke.mjs` verifies unauthenticated Access redirects and forged-identity rejection. These automated checks are not a substitute for a real administrator login/MFA test. See [Access setup](admin-access-setup.md).
 
 - Push a branch and open a pull request to get CI and a preview deployment.
 - Merge the pull request into `main` to deploy production automatically.
