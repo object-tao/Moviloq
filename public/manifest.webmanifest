@@ -1,0 +1,17 @@
+{
+  "name": "Moviloq",
+  "short_name": "Moviloq",
+  "description": "Local delivery, clearly coordinated.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#ff5a1f",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

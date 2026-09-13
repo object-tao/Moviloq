@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "moviloq",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-13",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // The D1 binding is added after the Cloudflare database is created:
+  // "d1_databases": [{
+  //   "binding": "DB",
+  //   "database_name": "moviloq",
+  //   "database_id": "<created-database-id>",
+  //   "migrations_dir": "migrations"
+  // }]
+}
