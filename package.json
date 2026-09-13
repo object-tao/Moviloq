@@ -11,13 +11,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "admin:build": "wrangler deploy --dry-run --config wrangler.admin.jsonc --env production --outdir dist/admin",
+    "admin:dev": "wrangler dev --config wrangler.admin.jsonc --env local --port 8788",
     "preview": "pnpm build && vite preview",
     "deploy": "node scripts/deploy.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm admin:build",
     "cf:typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply moviloq --local --config wrangler.local.jsonc",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote --env production --config wrangler.jsonc"

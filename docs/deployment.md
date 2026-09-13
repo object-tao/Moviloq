@@ -53,6 +53,8 @@ Custom domains for `moviloq.com` and `www.moviloq.com` are declared in the produ
 
 ## Release and recovery
 
+The independent administration Worker is configured in `wrangler.admin.jsonc`. `pnpm check` also builds it with Wrangler `--dry-run`; production deployment publishes it explicitly after the customer Worker. It is not part of customer PR preview domains and carries no customer database/service binding. `/api/health` reports its locked mode, while management pages/APIs return 403 until a future, separately tested authentication implementation. Production CI verifies this fail-closed behaviour using `scripts/admin-smoke.mjs`. Do not treat the 403 response as a broken customer deployment or remove it to make a generic 200-only check pass.
+
 - Push a branch and open a pull request to get CI and a preview deployment.
 - Merge the pull request into `main` to deploy production automatically.
 - Run the `Deploy production` workflow on `main` to retry a failed release.

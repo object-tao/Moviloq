@@ -4,6 +4,8 @@ Moviloq is a bilingual logistics marketplace being built for an initial pilot in
 
 This repository is in active development. It does **not** yet accept binding orders, payments or partner applications.
 
+Administration has a separate, deliberately locked endpoint at [admin.moviloq.com](https://admin.moviloq.com). It has no business data bindings or functional login yet. See the [admin / driver / fleet plan](docs/admin-driver-fleet-plan.md) and [Access setup prerequisites](docs/admin-access-setup.md).
+
 ## What is implemented
 
 - original, responsive English/Chinese marketing experience;

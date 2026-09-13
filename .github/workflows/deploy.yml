@@ -54,8 +54,10 @@ jobs:
           command: |
             d1 migrations apply DB --remote --config wrangler.jsonc --env production
             deploy
+            deploy --config wrangler.admin.jsonc --env production
 
       - name: Verify public website and API
         run: |
           node scripts/smoke.mjs https://moviloq.com production
           node scripts/smoke.mjs https://www.moviloq.com production
+          node scripts/admin-smoke.mjs https://admin.moviloq.com
