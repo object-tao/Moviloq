@@ -39,5 +39,5 @@ jobs:
       - name: Run quality gate
         run: pnpm check
 
-      - name: Verify admin readiness layout
+      - name: Verify administrator password login in workerd and browser
         run: node scripts/admin-browser-smoke.mjs "$RUNNER_TEMP/moviloq-admin-layout"

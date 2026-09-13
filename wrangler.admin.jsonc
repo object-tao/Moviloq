@@ -4,6 +4,7 @@
   "account_id": "ab8ac7142cabc51b891e1a119a2a2710",
   "main": "./worker/admin.ts",
   "compatibility_date": "2026-09-13",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
@@ -13,11 +14,14 @@
     "production": {
       "name": "moviloq-admin",
       "routes": [{ "pattern": "admin.moviloq.com", "custom_domain": true }],
+      "d1_databases": [{ "binding": "ADMIN_DB", "database_name": "moviloq-admin-auth-production", "database_id": "308a4a88-a424-41e3-920e-88d9e896fa60", "migrations_dir": "admin-migrations" }],
+      "triggers": { "crons": ["17 3 * * *"] },
       "vars": { "ENVIRONMENT": "production", "ADMIN_HOSTNAME": "admin.moviloq.com" }
     },
     "local": {
       "name": "moviloq-admin-local",
       "routes": [],
+      "d1_databases": [{ "binding": "ADMIN_DB", "database_name": "moviloq-admin-auth-local", "database_id": "00000000-0000-0000-0000-000000000001", "migrations_dir": "admin-migrations" }],
       "vars": { "ENVIRONMENT": "development", "ADMIN_HOSTNAME": "admin.moviloq.com" }
     }
   }

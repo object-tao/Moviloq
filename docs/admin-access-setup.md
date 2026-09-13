@@ -1,52 +1,50 @@
-# Administration access readiness
+# 管理员账号密码登录与恢复
 
-The production endpoint is `admin.moviloq.com`, served by the independent `moviloq-admin` Worker. `wrangler.admin.jsonc` deliberately contains no DB or service bindings. Cloudflare Access protects the entire hostname. Only an allowlisted owner with a verified application JWT can view the readiness page and session/health metadata. Every business operation remains disabled. Local development without the private auth configuration stays locked; there is no development authentication bypass.
+## 当前方案
 
-## Configured on 2026-09-13
+按所有者要求，`admin.moviloq.com` 只使用 Moviloq 自有账号密码登录；不要求 Cloudflare 邮箱验证码或 MFA。旧 Access/JWT 方案已由本方案替代，不要重新运行历史版本的 Access 初始化脚本。
 
-- Existing Zero Trust organization reused; no team rename, plan change, global deny-unmatched rule or global MFA enforcement.
-- A dedicated email OTP provider, one self-hosted admin application and one exact-email allow policy. No Everyone, whole-email-domain, service-token or bypass policy.
-- Organization MFA enrollment enabled for TOTP, biometrics and security keys. Only the admin application explicitly requires independent MFA on each Access login (`0m`); application sessions last one hour. Existing sessions are not shortened by the MFA duration.
-- `ADMIN_AUTH_CONFIG` is a Worker secret containing HTTPS issuer, exact audience, SHA-256 of the approved lowercase email and a Unix-second `notBefore` cutoff. It contains no deployment API credential. No owner identity appears in the public UI or source.
-- Origin verification uses `jose`, fixed issuer keys, RS256, required app-token claims, expiry, maximum one-hour lifetime and the session cutoff. Headers claiming an email/role, cookies and URL flags never grant access.
-- Only the `owner` role with `admin:readiness:read` exists. Multi-role invitations, business authorization and a durable audit ledger are future work. Operational events use a hashed subject, generated request ID, fixed route category and outcome; no JWT/email/request query is logged by this application.
-- `workers.dev` and preview URLs remain off. Production CI verifies Access policy drift and origin isolation before/after deployment, and checks that unauthenticated requests are challenged.
+- 首位管理员用户名为 `admin`，也支持已确认邮箱登录。没有公开注册入口或默认密码。
+- 专用 EU D1：`moviloq-admin-auth-production`，只保存管理员认证数据，不连接客户草稿数据库。
+- 密码采用随机盐和版本化 scrypt 哈希（N=32768、r=8、p=3，32 MiB），不保存明文。新密码 15–128 个字符，允许长句与 Unicode。
+- 登录时账号/邮箱别名合并限流：每个账号每 15 分钟最多 5 次尝试；每个 IP 最多 20 次。成功登录也计入该窗口。达到限制后等待窗口结束，不永久锁死账号。
+- 随机会话令牌只以 SHA-256 保存；生产 Cookie 使用 `__Host-`、Secure、HttpOnly、SameSite=Strict，绝不设置父域 Domain。最长 8 小时，30 分钟无活动失效。
+- 登录、退出、改密均检查同源 Origin 和 CSRF；退出必须 POST。改密要求当前密码并立即撤销所有旧会话。
+- 认证事件不记录原始密码、Cookie、邮箱或 IP；IP 使用服务端密钥 HMAC。认证事件保留 30 天，过期会话及限流记录每日 03:17 UTC 清理。提供商备份保留另行管理。
+- 当前只开放安全状态页、改密和退出；订单、客户、司机、车队和资金操作均未开放。司机与车队不能获得管理员权限。
 
-Real mailbox delivery, first MFA enrollment, successful owner login and logout/relogin still require owner verification. Automated negative tests do not prove the owner's real login works.
+参考：[OWASP 密码存储](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)、[Workers Node.js crypto](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/)。没有 MFA 时密码泄露仍可能导致账户被接管；请使用独立长密码并保存在密码管理器中。
 
-## One-time setup and verification
+## 首次配置（受信任操作员本机）
 
-`scripts/configure-admin-access.mjs --apply` performs explicit account-scoped bootstrap using private `CLOUDFLARE_API_TOKEN` and `MOVILOQ_ADMIN_EMAIL` environment variables. It refuses to replace an existing admin application or different organization MFA configuration. It preserves organization fields, leaves global enforcement off and stores origin metadata as a Worker secret. It is not a routine deployment step. A partial failure must be inspected before retrying; do not delete existing policies to make a retry pass.
+1. 按 `wrangler.admin.jsonc` 对专用 `ADMIN_DB` 应用 `admin-migrations`，不要对客户 DB 执行这套迁移。
+2. 为 admin Worker 设置随机 32 字节、64 位十六进制 `ADMIN_AUTH_SECRET` secret，用于日志 IP 指纹。它不是密码，也不是 Cloudflare API Token。发布会保留该 secret。
+3. 本机环境变量提供 `CLOUDFLARE_API_TOKEN` 和 `MOVILOQ_ADMIN_OWNER_SHA256`（已确认邮箱的小写 SHA-256），运行 `node scripts/setup-admin-password.mjs`。
+4. 所有者亲自打开工具输出的 `127.0.0.1` 链接设置密码；窗口 15 分钟后关闭，只绑定回环地址，校验 Host、Origin、一次性令牌及 Cookie。工具不打印密码/哈希，不将密码写入文件。首次设置仅允许空的管理员表，绝不覆盖现有账号。
+5. 密码保存在数据库前已在本机哈希。不要把密码、API Token 或含敏感信息的截图发到聊天、GitHub 或 CI。
 
-`scripts/verify-admin-access.mjs` is read-only and uses `CLOUDFLARE_API_TOKEN` and `MOVILOQ_ADMIN_OWNER_SHA256` (the latter is a production GitHub environment secret). It verifies exact-email identity, MFA, audience, cookie/session settings, the origin secret's presence and no data/alternative-host bindings. It cannot read back a secret's value or replace a genuine authenticated login test.
+## 从旧 Access 方案切换
 
-The owner enrolls a personal MFA device at the existing team's `/AddMfaDevice` page, then logs in at the admin hostname. Do not share enrollment QR codes, TOTP seeds, login codes, sessions or recovery material in a task, PR or repository. Logout uses the Cloudflare-managed `/cdn-cgi/access/logout` endpoint.
+这是一次受控迁移，不是每次部署自动删除 Access 应用：
 
-## Recovery and revocation
+1. 先完成独立数据库、密码及 secret；旧 Access 仍保护 admin 域名。
+2. 在真实 workerd + D1 + 浏览器中验证新程序及合成凭据；确认构建和安全测试通过。
+3. 手动部署已验证的新 admin Worker，保持旧 Access 前置保护。
+4. 核对 Worker 已是密码版本、绑定只包含认证数据库、生产所有者已配置后，仅移除 `admin.moviloq.com` 的旧 Access 应用，并删除该 Worker 的旧 `ADMIN_AUTH_CONFIG` secret。不得修改其他应用、身份提供商或组织全局策略。
+5. 执行 `admin-smoke.mjs` 与 `verify-admin-password.mjs`，确认自有登录表单、未登录 API 拒绝、源站隔离及所有者状态；再合并发布，使后续 CI/CD 使用新检查。
 
-Keep an independently secured Cloudflare account/recovery method. If the owner loses their only MFA device, the verified Cloudflare account owner must review identity and reset only that user's MFA device; never add an Everyone/bypass policy or disable global protections as a workaround.
+不要在配置完成前移除旧保护。新版本缺少 secret/DB 时返回 503，业务访问保持关闭。切换后不要直接回滚到依赖已删除 Access 配置的旧 Worker。
 
-For a lost admin session, revoke it in Access and advance the origin secret's `notBefore` cutoff; all older signed tokens then fail locally. Removing/replacing the approved owner fingerprint immediately denies the old identity at the origin. Routine sign-out is not a guarantee that a copied bearer token is immediately revoked; tokens are bounded to one hour. Before business data is connected, implement and test durable per-user revocation and multi-role permissions.
+## 日常使用与恢复
 
-An API token previously pasted in chat must be rotated through private configuration. Replace all local/CI consumers first, verify them, then revoke the old token. Avoid breaking other projects sharing that credential. No automatic token revocation has been performed.
+- 在管理台使用“修改密码”；输入当前密码和新密码后全部设备退出，再用新密码登录。
+- 忘记密码时，由已获授权的本机操作员在同样环境运行 `node scripts/setup-admin-password.mjs --reset-owner`，让所有者本人设置。工具必须匹配唯一的 owner 身份；提高凭据版本使旧会话立即失效，不通过公开网页提供无验证重置。
+- 紧急停用通过专用数据库将对应 owner 的 `status` 设为 `disabled`，所有旧会话立即失效。操作须另有明确授权；不要删除用户表或整个数据库。
+- 持续 CI 使用 `MOVILOQ_ADMIN_OWNER_SHA256` 检查身份漂移，不保存真实管理员密码。浏览器测试只在隔离的内存数据库中使用一次性合成密码。
+- 已在聊天中暴露的 Cloudflare API Token 应在替换本机/CI 使用者后撤销；不得为此意外中断其他项目。
 
-## Prerequisites before enabling real administration
+## 本地验证
 
-- Confirm the Cloudflare Zero Trust organization for the Moviloq account without changing unrelated account-wide policies.
-- Configure an Access self-hosted application scoped only to `admin.moviloq.com`. Do not protect the public customer domain by accident.
-- Add only the explicitly approved administrator identities. Never allow `Everyone` or a whole consumer-email domain such as `qq.com`.
-- Configure an identity provider or email OTP and independent MFA. OTP by email alone does not satisfy the project's administrator-MFA requirement.
-- Implement JWT signature, issuer, audience, type and expiry checks at the origin with a maintained verification library. Do not trust `Cf-Access-Authenticated-User-Email` alone.
-- Implement server-side RBAC, audited access, session expiration/revocation and a tested recovery process before adding data bindings.
-- Test direct-origin/alternative-host bypasses, forged tokens, invalid audience, expired token, revoked roles and cross-tenant access.
-- Test the first allowed login and MFA enrollment with the actual administrator; an allowlist entry is not a verified working login.
+`pnpm check` 完成 lint、类型、SQLite/密码单元测试和构建；随后运行 `node scripts/admin-browser-smoke.mjs`，启动隔离 workerd 与 D1，在真实 Chromium 中完成登录、退出、改密及移动端布局检查。不会使用生产账号。
 
-## Resolved authorization blocker
-
-Reading `/accounts/<account>/access/organizations` previously returned HTTP 403 with Cloudflare code 10000. After the owner updated the scoped token, this read returned 200 and setup succeeded. The official organization API accepts `Access: Organizations, Identity Providers, and Groups Write` for setup. Access application/policy configuration separately requires `Access: Apps and Policies Write`.
-
-The account owner can edit the existing scoped token's permissions in **My Profile → API Tokens**, adding only the Access permissions needed in the Moviloq account (UI may label Write as Edit). If replacing the token, use secure environment/GitHub secret storage; never paste it into source, a PR, an issue or chat. Keep existing Workers/D1/domain permissions needed by current CI/CD.
-
-Do not change global deny-unmatched, WARP, organization-wide MFA or existing identity providers without inspecting their current impact. If a Zero Trust organization does not exist, first-time plan/terms selection needs the account owner. Do not subscribe to a paid plan without approval.
-
-References: [organization setup API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/create/), [JWT verification](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/), [independent MFA](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/independent-mfa/).
+生产管理员本人的密码输入及首次登录需本人完成，自动化测试不代表已经代其完成实际登录。Workers 密码哈希需要 CPU 预算；应观察实际运行限制，不得自动购买或升级套餐，也不得为绕过限制降低哈希强度。

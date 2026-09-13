@@ -26,7 +26,6 @@
   },
   "dependencies": {
     "hono": "4.13.7",
-    "jose": "6.2.12",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router-dom": "7.18.3",
@@ -44,6 +43,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "eslint": "10.10.0",
     "jsdom": "30.0.1",
+    "miniflare": "5.20260911.0-alpha",
     "playwright-core": "1.63.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.0",
