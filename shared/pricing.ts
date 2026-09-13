@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PricingRule } from "./operations";
 
 export const vehicleIds = [
   "bike",
@@ -103,23 +104,26 @@ export type QuoteEstimate = {
   kind: "estimate";
   quotedAt: string;
   expiresAt: string;
+  pricingVersion?: string;
+  pricingRule?: PricingRule;
 };
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
-export function calculateQuote(input: QuoteRequest): QuoteEstimate {
+export function calculateQuote(input: QuoteRequest, rule?: PricingRule, pricingVersion = "engineering-2026-09"): QuoteEstimate {
   const parsed = quoteRequestSchema.parse(input);
   const vehicle = vehicles[parsed.vehicleId];
-  const chargeableKm = Math.max(0, parsed.distanceKm - vehicle.includedKm);
-  const base = vehicle.baseNet;
-  const distance = roundMoney(chargeableKm * vehicle.perKmNet);
-  const stops = parsed.extraStops * 4.5;
-  const services = (parsed.loadingHelp ? 25.21 : 0) + (parsed.helper ? 25.21 : 0);
-  const wait = Math.max(0, Math.ceil((parsed.waitMinutes - 10) / 5)) * 3;
+  const includedKm = rule?.includedKm ?? vehicle.includedKm;
+  const boundary = rule?.tier1UntilKm ?? 500;
+  const base = rule?.baseNet ?? vehicle.baseNet;
+  const distance = roundMoney(Math.max(0, Math.min(parsed.distanceKm, boundary) - includedKm) * (rule?.perKmNet ?? vehicle.perKmNet) + Math.max(0, parsed.distanceKm - boundary) * (rule?.tier2PerKmNet ?? vehicle.perKmNet));
+  const stops = roundMoney(parsed.extraStops * (rule?.extraStopNet ?? 4.5));
+  const services = roundMoney((parsed.loadingHelp ? rule?.loadingHelpNet ?? 25.21 : 0) + (parsed.helper ? rule?.helperNet ?? 25.21 : 0));
+  const wait = roundMoney(Math.max(0, Math.ceil((parsed.waitMinutes - (rule?.freeWaitMinutes ?? 10)) / (rule?.waitBlockMinutes ?? 5))) * (rule?.waitBlockNet ?? 3));
   const beforePriority = base + distance + stops + services + wait;
-  const priority = parsed.priority ? roundMoney(beforePriority * 0.12) : 0;
+  const priority = parsed.priority ? roundMoney(beforePriority * (rule?.priorityRate ?? 0.12)) : 0;
   const net = roundMoney(beforePriority + priority);
-  const vatRate = 0.19;
+  const vatRate = rule?.vatRate ?? 0.19;
   const vat = roundMoney(net * vatRate);
 
   return {
@@ -138,6 +142,8 @@ export function calculateQuote(input: QuoteRequest): QuoteEstimate {
     },
     validForMinutes: 10,
     kind: "estimate",
+    pricingVersion,
+    ...(rule ? { pricingRule: rule } : {}),
     quotedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 10 * 60_000).toISOString()
   };

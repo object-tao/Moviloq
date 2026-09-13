@@ -41,3 +41,6 @@ jobs:
 
       - name: Verify administrator password login in workerd and browser
         run: node scripts/admin-browser-smoke.mjs "$RUNNER_TEMP/moviloq-admin-layout"
+
+      - name: Verify operations workflows in isolated workerd and browser
+        run: node scripts/operations-browser-smoke.mjs "$RUNNER_TEMP/moviloq-operations"

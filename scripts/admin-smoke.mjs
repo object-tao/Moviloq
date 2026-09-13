@@ -10,7 +10,7 @@ async function verify() {
   assert(!html.includes("cloudflareaccess.com")); assert.equal(login.headers.get("cache-control"), "no-store");
   const cookie = login.headers.get("set-cookie");
   assert(cookie.includes("__Host-moviloq-admin-csrf=") && cookie.includes("Secure") && cookie.includes("HttpOnly") && !cookie.includes("Domain="));
-  const health = await (await get("/api/health")).json(); assert.equal(health.authentication, "password"); assert.equal(health.configured, true); assert.equal(health.businessDataConnected, false);
+  const health = await (await get("/api/health")).json(); assert.equal(health.authentication, "password"); assert.equal(health.configured, true); assert.equal(health.businessDataConnected, true); assert.equal(health.liveOrdersEnabled, false); assert.equal(health.paymentsEnabled, false); assert.equal(health.release, "operations-phase-one");
   for (const path of ["/api/admin/session", "/api/admin/users", "/api/drafts", "/api/drivers", "/api/fleets"]) {
     for (const method of ["GET", "POST"]) {
       const res = await get(path, { method, headers: { "Cf-Access-Jwt-Assertion": "forged", "Cf-Access-Authenticated-User-Email": "test@example.test", Cookie: "role=owner; __Host-moviloq-admin-session=forged" } });

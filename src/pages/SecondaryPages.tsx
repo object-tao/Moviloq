@@ -1,7 +1,8 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowIcon, CheckIcon, PinIcon, ShieldIcon, TruckIcon } from "../components/Icons";
 import { useLanguage } from "../lib/i18n";
+import { getPublishedContent, type PublishedContent } from "../lib/api";
 
 type InfoKind = "personal" | "business" | "partners" | "help";
 
@@ -37,6 +38,8 @@ export function InfoPage({ kind }: { kind: InfoKind }) {
   const zh = language === "zh";
   const index = zh ? 1 : 0;
   const content = infoContent[kind];
+  const [articles, setArticles] = useState<PublishedContent[]>([]);
+  useEffect(() => { let active = true; if(kind === "help") getPublishedContent().then(result => { if(active) setArticles(result.items); }).catch(() => {}); return () => { active = false; }; }, [kind]);
 
   return (
     <section className="simple-page">
@@ -56,6 +59,7 @@ export function InfoPage({ kind }: { kind: InfoKind }) {
           <small>{zh ? "法兰克福 · 试运营" : "Frankfurt · pilot release"}</small>
         </div>
       </div>
+      {kind === "help" && articles.length > 0 && <div className="container published-help">{articles.map(article => <article key={article.id} className="simple-card"><h2>{zh ? article.titleZh : article.titleEn}</h2><p className="published-content-body">{zh ? article.bodyZh : article.bodyEn}</p></article>)}</div>}
     </section>
   );
 }
@@ -98,7 +102,7 @@ export function LoginPage() {
         <p>{zh ? "账户认证将在下一开发阶段接入。" : "Secure account authentication is being connected in the next phase."}</p>
         <label><span>{zh ? "电子邮箱" : "Email address"}</span><input type="email" placeholder="you@example.com" disabled /></label>
         <button className="button button--full" disabled>{zh ? "即将开放" : "Coming next"}</button>
-        <div className="auth-note"><ShieldIcon size={18} />{zh ? "管理员账户将强制使用多因素认证" : "Admin accounts will require multi-factor authentication"}</div>
+        <div className="auth-note"><ShieldIcon size={18} />{zh ? "平台员工使用独立的账号密码后台登录" : "Platform staff use the separate password-protected admin portal"}</div>
       </div>
     </section>
   );

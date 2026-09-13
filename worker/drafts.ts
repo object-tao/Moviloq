@@ -2,15 +2,14 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
-import { bookingSchema, quoteInput, validSchedule, type SavedDraft } from "../shared/booking";
-import { calculateQuote } from "../shared/pricing";
+import { createBookingSchema, quoteInput, validSchedule, type SavedDraft } from "../shared/booking";
+import { publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
 
 export type DraftBindings = { DB?: D1Database; DRAFT_LIMITER?: RateLimit; ENVIRONMENT?: string };
 type Variables = { sessionHash: string | null; expiresAt: string | null };
 type DraftEnv = { Bindings: DraftBindings; Variables: Variables };
 type DraftRow = { id: string; reference: string; version: number; request_json: string; estimate_json: string; created_at: string; updated_at: string };
 const uuid = z.string().uuid();
-const writeSchema = z.object({ booking: bookingSchema, version: z.number().int().positive().optional() });
 const ttlSeconds = 30 * 24 * 60 * 60;
 
 async function sha256(value: string) {
@@ -75,7 +74,8 @@ drafts.get("/:id", async (c) => {
 drafts.on(["POST", "PUT"], ["/", "/:id"], async (c) => {
   const updating = c.req.method === "PUT";
   if ((updating && !c.req.param("id")) || (!updating && c.req.param("id"))) return c.json({ error: "NOT_FOUND" }, 404);
-  const parsed = writeSchema.safeParse(await c.req.json().catch(() => null));
+  const configs = await publishedConfigs(c.env.DB);
+  const parsed = z.object({ booking: createBookingSchema(configuredVehicles(configs)), version: z.number().int().positive().optional() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "INVALID_BOOKING", issues: parsed.error.issues }, 422);
   if (!validSchedule(parsed.data.booking)) return c.json({ error: "INVALID_SCHEDULE" }, 422);
   if (updating && (!uuid.safeParse(c.req.param("id")).success || !parsed.data.version)) return c.json({ error: "INVALID_VERSION" }, 422);
@@ -93,10 +93,16 @@ drafts.on(["POST", "PUT"], ["/", "/:id"], async (c) => {
     c.set("expiresAt", expiry);
   }
   const requestJson = JSON.stringify(parsed.data.booking);
-  const estimateJson = JSON.stringify(calculateQuote(quoteInput(parsed.data.booking)));
+  let estimate;
+  try { estimate = quoteWithConfig(quoteInput(parsed.data.booking), configs); }
+  catch (error) {
+    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE"].includes(error.message)) return c.json({ error: error.message }, 422);
+    throw error;
+  }
+  const estimateJson = JSON.stringify(estimate);
   if (updating) {
     const row = await c.env.DB!.prepare("UPDATE booking_drafts SET request_json = ?, estimate_json = ?, pricing_version = ?, updated_at = ?, version = version + 1 WHERE id = ? AND session_hash = ? AND version = ? RETURNING *")
-      .bind(requestJson, estimateJson, "draft-2026-09", now, c.req.param("id"), hash, parsed.data.version!).first<DraftRow>();
+      .bind(requestJson, estimateJson, estimate.pricingVersion!, now, c.req.param("id"), hash, parsed.data.version!).first<DraftRow>();
     if (row) return c.json({ draft: serialize(row, c.get("expiresAt")!) });
     const exists = await c.env.DB!.prepare("SELECT id FROM booking_drafts WHERE id = ? AND session_hash = ?").bind(c.req.param("id"), hash).first();
     return exists ? c.json({ error: "VERSION_CONFLICT" }, 409) : c.json({ error: "DRAFT_NOT_FOUND" }, 404);
@@ -109,7 +115,7 @@ drafts.on(["POST", "PUT"], ["/", "/:id"], async (c) => {
   const id = crypto.randomUUID();
   const reference = `MVQ-D-${id.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
   await c.env.DB!.prepare("INSERT INTO booking_drafts (id, session_hash, idempotency_key, reference, request_json, estimate_json, pricing_version, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM booking_drafts WHERE session_hash = ?) < 30 ON CONFLICT(session_hash, idempotency_key) DO NOTHING")
-    .bind(id, hash, idempotencyKey!, reference, requestJson, estimateJson, "draft-2026-09", now, now, hash).run();
+    .bind(id, hash, idempotencyKey!, reference, requestJson, estimateJson, estimate.pricingVersion!, now, now, hash).run();
   const row = await c.env.DB!.prepare("SELECT * FROM booking_drafts WHERE session_hash = ? AND idempotency_key = ?").bind(hash, idempotencyKey!).first<DraftRow>();
   if (!row) return c.json({ error: "DRAFT_LIMIT_REACHED" }, 409);
   if (row.request_json !== requestJson) return c.json({ error: "IDEMPOTENCY_CONFLICT" }, 409);

@@ -8,7 +8,7 @@ export const stopSchema = z.object({
   notes: z.string().trim().max(400).default("")
 });
 
-export const bookingSchema = z.object({
+export function createBookingSchema(catalog: typeof vehicles = vehicles) { return z.object({
   pickup: stopSchema,
   dropoffs: z.array(stopSchema).min(1).max(20),
   vehicleId: z.enum(vehicleIds),
@@ -29,7 +29,8 @@ export const bookingSchema = z.object({
   priority: z.boolean(),
   notes: z.string().trim().max(600).default("")
 }).superRefine((value, context) => {
-  const vehicle = vehicles[value.vehicleId];
+  const vehicle = catalog[value.vehicleId];
+  if (!vehicle) { context.addIssue({ code: "custom", path: ["vehicleId"], message: "VEHICLE_UNAVAILABLE" }); return; }
   if (value.cargo.totalWeightKg > vehicle.capacityKg) {
     context.addIssue({ code: "custom", path: ["cargo", "totalWeightKg"], message: "OVERWEIGHT" });
   }
@@ -46,7 +47,8 @@ export const bookingSchema = z.object({
   if (value.serviceType === "on-demand" && value.scheduledAt !== null) {
     context.addIssue({ code: "custom", path: ["scheduledAt"], message: "UNEXPECTED_SCHEDULE" });
   }
-});
+}); }
+export const bookingSchema = createBookingSchema();
 
 export type BookingInput = z.infer<typeof bookingSchema>;
 export type BookingStop = BookingInput["pickup"];

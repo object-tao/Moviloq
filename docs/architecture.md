@@ -13,7 +13,11 @@ Moviloq is a Cloudflare-native full-stack application:
 
 The browser never receives provider credentials. Current shared pricing rules are public development fixtures, not private commercial rates. Both the quote API and draft saves calculate on the server, ignoring client-supplied totals.
 
-## Draft workspace (implemented)
+## Operations preparation (implemented)
+
+The separate admin Worker keeps password credentials and staff roles in `ADMIN_DB`, and accesses only explicit `ops_*` preparation workflows through the server using an allowlisted `OPS_DB` binding. It does not expose anonymous customer draft data to staff. Owner, operations and reviewer permissions are checked on every protected handler. Documents are private, size/type bounded and access-audited; published configurations are immutable. A global operations revision and guarded D1 transactions serialize dependent validation and writes, including the audit event. Published preview tariffs and vehicle capacities feed customer quote/draft validation without repricing stored snapshots. Live orders and payments remain off. See [operations implementation, limits and runbook](admin-operations.md).
+
+## Draft workspace details
 
 `POST /api/drafts` creates a workspace only after valid input. A random 256-bit bearer credential is held in an HttpOnly, SameSite=Strict, host-only cookie (Secure and `__Host-` prefixed on HTTPS); D1 stores only its SHA-256 hash. This is browser access, not account authentication or cross-device recovery. All reads, updates and deletes scope SQL by the session hash. Draft IDs alone grant no access. Mutations require the exact same Origin, and private responses are never cached.
 
