@@ -12,12 +12,17 @@
     "run_worker_first": ["/api/*"]
   },
   "vars": { "ENVIRONMENT": "development" },
+  "d1_databases": [{ "binding": "DB", "database_name": "moviloq", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+  "ratelimits": [{ "name": "DRAFT_LIMITER", "namespace_id": "260913001", "simple": { "limit": 60, "period": 60 } }],
   "env": {
     "production": {
       "name": "moviloq",
       "workers_dev": true,
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "production" },
+      "d1_databases": [{ "binding": "DB", "database_name": "moviloq-production", "database_id": "3b9a22d0-659a-4e26-bb8a-17c35f96750a", "migrations_dir": "migrations" }],
+      "ratelimits": [{ "name": "DRAFT_LIMITER", "namespace_id": "260913002", "simple": { "limit": 60, "period": 60 } }],
+      "triggers": { "crons": ["15 3 * * *"] },
       "routes": [
         { "pattern": "moviloq.com", "custom_domain": true },
         { "pattern": "www.moviloq.com", "custom_domain": true }
@@ -28,14 +33,9 @@
       "workers_dev": true,
       "preview_urls": false,
       "routes": [],
-      "vars": { "ENVIRONMENT": "preview" }
+      "vars": { "ENVIRONMENT": "preview" },
+      "d1_databases": [{ "binding": "DB", "database_name": "moviloq-preview-local", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+      "ratelimits": [{ "name": "DRAFT_LIMITER", "namespace_id": "260913003", "simple": { "limit": 60, "period": 60 } }]
     }
   }
-  // The D1 binding is added after the Cloudflare database is created:
-  // "d1_databases": [{
-  //   "binding": "DB",
-  //   "database_name": "moviloq",
-  //   "database_id": "<created-database-id>",
-  //   "migrations_dir": "migrations"
-  // }]
 }

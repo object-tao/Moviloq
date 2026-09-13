@@ -17,6 +17,11 @@ async function verify() {
   assert.equal(health.ok, true);
   assert.equal(health.service, "moviloq");
   assert.equal(health.environment, expectedEnvironment, "Wrong deployment environment");
+  assert.equal(health.storage, "ready", "Draft database is not ready");
+  const drafts = await get("/api/drafts");
+  assert.equal(drafts.status, 200);
+  assert.deepEqual(await drafts.json(), { drafts: [] });
+  assert.match(drafts.headers.get("cache-control") ?? "", /(?:^|,)\s*no-store(?:,|$)/i);
 
   const homepage = await get("/");
   assert.equal(homepage.status, 200, "Homepage status");

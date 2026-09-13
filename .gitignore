@@ -6,6 +6,7 @@ dist/
 .env
 .env.*
 !.env.example
+wrangler.preview.json
 !.dev.vars.example
 coverage/
 *.local

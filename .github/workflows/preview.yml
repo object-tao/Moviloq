@@ -27,6 +27,7 @@ jobs:
       url: https://moviloq-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
     env:
       CLOUDFLARE_ENV: preview
+      MOVILOQ_WRANGLER_CONFIG: wrangler.preview.json
       WRANGLER_SEND_METRICS: "false"
     steps:
       - name: Check out repository
@@ -46,6 +47,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare isolated preview database
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/prepare-preview.mjs "$PR_NUMBER"
+
       - name: Run quality gate
         run: pnpm check
 
@@ -54,12 +62,21 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --name moviloq-pr-${{ github.event.pull_request.number }}
+          command: |
+            d1 migrations apply DB --remote --config wrangler.preview.json --env preview
+            deploy --name moviloq-pr-${{ github.event.pull_request.number }}
 
       - name: Verify preview website and API
         env:
           PREVIEW_URL: https://moviloq-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
-        run: node scripts/smoke.mjs "$PREVIEW_URL" preview
+        run: |
+          node scripts/smoke.mjs "$PREVIEW_URL" preview
+          node scripts/drafts-smoke.mjs "$PREVIEW_URL"
+
+      - name: Verify browser booking flow
+        env:
+          PREVIEW_URL: https://moviloq-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
+        run: node scripts/browser-smoke.mjs "$PREVIEW_URL" "$RUNNER_TEMP/moviloq-browser-qa"
 
   remove-preview:
     if: >-

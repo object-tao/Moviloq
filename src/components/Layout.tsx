@@ -18,7 +18,8 @@ export function Layout({ children }: { children: ReactNode }) {
     ["/personal", t.nav.personal],
     ["/business", t.nav.business],
     ["/partners", t.nav.partner],
-    ["/track", t.nav.track]
+    ["/track", t.nav.track],
+    ["/drafts", language === "zh" ? "我的草稿" : "My drafts"]
   ];
 
   return (
@@ -43,7 +44,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <Link to="/book" className="button button--small">
               {t.nav.book}<ArrowIcon size={16} />
             </Link>
-            <button className="menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Toggle navigation">
+            <button className="menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Toggle navigation" aria-expanded={menuOpen}>
               {menuOpen ? <CloseIcon /> : <MenuIcon />}
             </button>
           </div>
@@ -66,6 +67,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <div>
             <h3>Support</h3>
             <Link to="/track">{t.nav.track}</Link>
+            <Link to="/drafts">{language === "zh" ? "我的草稿" : "My drafts"}</Link>
             <Link to="/help">Help centre</Link>
             <a href="mailto:hello@moviloq.com">hello@moviloq.com</a>
           </div>

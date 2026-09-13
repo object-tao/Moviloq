@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
-import { BookPage } from "./pages/BookPage";
+import { BookingPage } from "./pages/BookingPage";
+import { DraftsPage } from "./pages/DraftsPage";
 import { HomePage } from "./pages/HomePage";
 import { InfoPage, LegalPage, LoginPage, TrackPage } from "./pages/SecondaryPages";
 
@@ -9,7 +10,8 @@ export default function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/book" element={<BookPage />} />
+        <Route path="/book" element={<BookingPage />} />
+        <Route path="/drafts" element={<DraftsPage />} />
         <Route path="/personal" element={<InfoPage kind="personal" />} />
         <Route path="/business" element={<InfoPage kind="business" />} />
         <Route path="/partners" element={<InfoPage kind="partners" />} />
