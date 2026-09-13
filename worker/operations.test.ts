@@ -35,6 +35,80 @@ async function approve(id:string){await success(await upload(id));const doc=last
 function stringData(data:Record<string,unknown>){return Object.fromEntries(Object.entries(data).map(([key,val])=>[key,typeof val==="boolean"?val?"on":"":String(val)]));}
 async function price(base:number){const location=await success(await post("/ops/configs/create",{kind:"pricing",scope:"transporter",title:`Test pricing ${base}`,...stringData({...defaultPricing("transporter"),baseNet:base}),reason:"Create test pricing"}));return location.split("/")[3].split("?")[0];}
 describe("operations preparation",()=>{
+  it("groups lists under their parent menus and keeps dedicated review navigation active",async()=>{
+    const fleet=await create();
+    const html=await(await request("/ops/resources/fleet")).text();
+    for(const [kind,title]of [["fleet","车队列表"],["driver","司机列表"],["vehicle","车辆列表"]]) {
+      const group=new RegExp(`<details[^>]*data-menu="${kind}"[^>]*>([\\s\\S]*?)</details>`).exec(html)?.[1];
+      expect(group).toContain(`href="/ops/resources/${kind}"`);expect(group).toContain(title);
+    }
+    expect(html).toContain('<h1>车队列表</h1>');
+    const reviewHtml=await(await request(`/ops/reviews/resource/${fleet}`)).text();
+    expect(reviewHtml).toContain('href="/ops/reviews/fleet" aria-current="page"');
+    expect(reviewHtml).not.toContain('href="/ops/resources/fleet" aria-current="page"');
+    expect(reviewHtml).not.toContain('action="/ops/resource/'+fleet+'/save"');
+    expect(reviewHtml).toContain("档案审核资料（只读）");
+    await success(await request("/ops/language/en"));
+    const english=await(await request("/ops/reviews/driver")).text();
+    expect(english).toContain("Driver management");expect(english).toContain('<h1>Driver reviews</h1>');
+    signIn("reviewer");const reviewer=await(await request("/ops/reviews/fleet")).text();
+    expect(reviewer).not.toContain('href="/ops/staff"');expect(reviewer).not.toContain('href="/ops/configs"');
+  });
+  it("separates review queues by resource kind, status and latest document version",async()=>{
+    const entries=[];
+    for(const kind of ["fleet","driver","vehicle"]){
+      const id=await create(kind,{name:`Queue-only ${kind}`});
+      expect(await(await request(`/ops/reviews/${kind}`)).text()).not.toContain(`Queue-only ${kind}`);
+      await success(await upload(id));await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Queue separation test"}));
+      entries.push({kind,id,doc:lastDoc(id).id});
+    }
+    for(const entry of entries){
+      const html=await(await request(`/ops/reviews/${entry.kind}`)).text();
+      expect(html).toContain(`Queue-only ${entry.kind}`);expect(html).toContain(`/ops/document/${entry.doc}`);
+      for(const other of entries.filter(row=>row.kind!==entry.kind)){expect(html).not.toContain(`Queue-only ${other.kind}`);expect(html).not.toContain(`/ops/document/${other.doc}`);}
+    }
+    const fleet=entries[0];await success(await upload(fleet.id));
+    const html=await(await request("/ops/reviews/fleet")).text();expect(html).not.toContain(`/ops/document/${fleet.doc}`);expect(html).toContain(`/ops/document/${lastDoc(fleet.id).id}`);
+    await success(await post(`/ops/reviews/resource/${fleet.id}/status`,{version:version(fleet.id),action:"needs_info",reason:"Missing fleet pages"}));
+    const needs=await(await request("/ops/reviews/fleet?status=needs_info")).text();expect(needs).toContain("Queue-only fleet");expect(needs).not.toContain("Queue-only driver");
+    for(const path of ["/ops/reviews/invalid","/ops/reviews/fleet?status=invalid","/ops/reviews/driver?record_page=0","/ops/reviews/vehicle?document_page=-1"]){expect((await request(path)).status).toBe(422);}
+    jar.clear();expect((await request("/ops/reviews/fleet")).status).toBe(303);expect((await request(`/ops/reviews/resource/${fleet.id}`)).status).toBe(303);
+  });
+  it("moves decisions out of maintenance pages and enforces permissions on both status endpoints",async()=>{
+    const id=await create();await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit review fixture"}));
+    const recordHtml=await(await request(`/ops/resource/${id}`)).text();expect(recordHtml).not.toContain('value="approve"');expect(recordHtml).toContain(`/ops/reviews/resource/${id}`);
+    const reviewHtml=await(await request(`/ops/reviews/resource/${id}`)).text();expect(reviewHtml).toContain(`action="/ops/reviews/resource/${id}/status"`);expect(reviewHtml).toContain('value="approve"');
+    const endpoint=`/ops/reviews/resource/${id}/status`;
+    expect((await post(endpoint,{version:version(id),action:"approve",reason:"Missing required evidence"})).status).toBe(422);
+    const before=ops.sqlite.prepare("SELECT count(*) n FROM ops_events").get()?.n;
+    signIn("operations");expect(await(await request(`/ops/reviews/resource/${id}`)).text()).not.toContain('value="approve"');
+    for(const path of [endpoint,`/ops/resource/${id}/status`])expect((await post(path,{version:version(id),action:"reject",reason:"Unauthorized decision"})).status).toBe(403);
+    signIn("reviewer");expect((await post(endpoint,{version:version(id),action:"reject",reason:"Forged origin"},"https://untrusted.example")).status).toBe(403);
+    expect((await post(endpoint,{version:"0",action:"reject",reason:"Old version"})).status).toBe(409);
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events").get()?.n).toBe(before);
+    const location=await success(await post(endpoint,{version:version(id),action:"reject",reason:"Document inconsistency"}));expect(location).toBe(`/ops/reviews/resource/${id}?saved=1`);expect(row(id).status).toBe("rejected");
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE action='resource.reject'").get()?.n).toBe(1);
+  });
+  it("filters expiring records by actual latest expiring evidence rather than pending status",async()=>{
+    const fleet=await create("fleet",{name:"Fleet due for renewal"});await policy("fleet");await approve(fleet);
+    ops.sqlite.prepare("UPDATE ops_documents SET expires_on='2000-01-01' WHERE resource_id=?").run(fleet);
+    const pending=await create("fleet",{name:"Unrelated pending fleet"});await success(await post(`/ops/resource/${pending}/status`,{version:version(pending),action:"submit",reason:"Waiting for evidence"}));
+    const html=await(await request("/ops/reviews/fleet?status=expiring")).text();expect(html).toContain("Fleet due for renewal");expect(html).not.toContain("Unrelated pending fleet");
+    expect(await(await request("/ops/reviews/driver?status=expiring")).text()).not.toContain("Fleet due for renewal");
+    await success(await upload(fleet));expect(await(await request("/ops/reviews/fleet?status=expiring")).text()).not.toContain("Fleet due for renewal");
+  });
+  it("paginates documents and records independently while preserving kind and status",async()=>{
+    for(let i=0;i<26;i++){
+      const id=await create("fleet",{name:`Pagination fleet ${String(i).padStart(2,"0")}`});
+      await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Pagination fixture"}));
+      await success(await upload(id));
+    }
+    const first=await(await request("/ops/reviews/fleet")).text();expect(first).toContain("/ops/reviews/fleet?status=submitted&amp;document_page=1&amp;record_page=2");expect(first).toContain("/ops/reviews/fleet?status=submitted&amp;record_page=1&amp;document_page=2");
+    const second=await(await request("/ops/reviews/fleet?record_page=2&document_page=1")).text();
+    expect(second).toContain("/ops/reviews/fleet?status=submitted&amp;record_page=2&amp;document_page=2");
+    const sections=second.match(/<section class="panel">[\s\S]*?<\/section>/g)!;
+    expect(sections[0].match(/<tr>/g)).toHaveLength(2);expect(sections[1].match(/<tr>/g)).toHaveLength(26);
+  });
   it("renders real empty metrics and keeps transactions closed",async()=>{const response=await request("/");expect(response.status).toBe(200);const html=await response.text();expect(html).toContain("今天的运营工作台");expect(html).toContain("正式接单与收款未开放");expect(html).not.toContain("安全访问已建立");const data=await(await request("/api/admin/overview")).json();expect(data).toMatchObject({resources:[],pendingDocuments:0,liveOrdersEnabled:false,paymentsEnabled:false});expect((await request("/api/admin/orders")).status).toBe(403);expect((await request("/api/admin/payments")).status).toBe(403);});
   it("persists authorized preparation records without creating user identities",async()=>{const id=await create();expect(row(id).status).toBe("draft");expect(ops.sqlite.prepare("SELECT count(*) n FROM users").get()?.n).toBe(0);expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE resource_id=?").get(id)?.n).toBe(1);expect(await(await request(`/ops/resource/${id}`)).text()).toContain("Example Test GmbH");});
   it("searches safely and escapes stored markup",async()=>{const id=await create("fleet",{name:'<script>alert("x")</script>'});const html=await(await request(`/ops/resource/${id}`)).text();expect(html).not.toContain('<script>alert("x")</script>');expect(html).toContain("&lt;script&gt;");expect((await request("/ops/resources/fleet?q=%27%20OR%201%3D1--")).status).toBe(200);});
