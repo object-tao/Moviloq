@@ -2086,3 +2086,5 @@ button:disabled { opacity: .5; }
   .draft-card { padding: 20px; }
   .stop-controls .inline-button { min-height: 40px; min-width: 40px; }
 }
+:root .published-content-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.published-help { display: grid; gap: 24px; padding-bottom: 60px; }

@@ -17,14 +17,20 @@ const worker = await api("/workers/scripts/moviloq-admin/settings");
 assert(worker.bindings?.some(b => b.name === "ADMIN_AUTH_SECRET" && b.type === "secret_text"), "Password-auth secret missing");
 assert(!worker.bindings.some(b => b.name === "ADMIN_AUTH_CONFIG"), "Retired Access configuration must not remain deployed");
 const databases = worker.bindings.filter(b => b.type === "d1");
-assert.equal(databases.length, 1); assert.equal(databases[0].name, "ADMIN_DB");
-assert.equal(databases[0].id, "308a4a88-a424-41e3-920e-88d9e896fa60");
-assert(worker.bindings.every(b => ["plain_text", "secret_text", "d1"].includes(b.type)), "Unexpected business/service binding");
+assert.equal(databases.find(b => b.name === "ADMIN_DB")?.id, "308a4a88-a424-41e3-920e-88d9e896fa60");
+assert(databases.length >= 1 && databases.length <= 2 && databases.every(b => b.name === "ADMIN_DB" || (b.name === "OPS_DB" && b.id === "3b9a22d0-659a-4e26-bb8a-17c35f96750a")), "Unexpected database binding");
+if (process.argv.includes("--operations-required")) assert.equal(databases.find(b => b.name === "OPS_DB")?.id, "3b9a22d0-659a-4e26-bb8a-17c35f96750a", "Operations database binding missing");
+assert(worker.bindings.every(b => ["plain_text", "secret_text", "d1"].includes(b.type)), "Unexpected service binding");
 const database = await api("/d1/database/308a4a88-a424-41e3-920e-88d9e896fa60"); assert.equal(database.name, "moviloq-admin-auth-production");
 const result = await api("/d1/database/308a4a88-a424-41e3-920e-88d9e896fa60/query", { sql: "SELECT id,username,email_sha256,status FROM admin_users", params: [] });
-const owners = result[0].results;
-assert.equal(owners.length, 1, "Expected one provisioned owner");
+const owners = result[0].results.filter(user => user.id === "owner");
+assert.equal(owners.length, 1, "Expected the provisioned owner; restricted staff may also exist");
 assert(owners[0].id === "owner" && createHash("sha256").update(owners[0].username).digest("hex") === ownerHash && owners[0].email_sha256 === ownerHash && owners[0].status === "active", "Unexpected administrator identity/state");
+if (databases.some(b => b.name === "OPS_DB")) {
+  const privileged = await api("/d1/database/308a4a88-a424-41e3-920e-88d9e896fa60/query", { sql: "SELECT id FROM admin_users WHERE role='owner'", params: [] });
+  assert.equal(privileged[0].results.length, 1, "Expected exactly one owner role");
+  assert.equal(privileged[0].results[0].id, "owner", "Unexpected owner role");
+}
 const subdomain = await api("/workers/scripts/moviloq-admin/subdomain");
 assert(subdomain.enabled === false && subdomain.previews_enabled === false, "Alternative origin URLs must remain disabled");
-console.log("Verified password-only admin: confirmed owner, dedicated authentication D1, no Access gate or business bindings, alternative URLs disabled. No credential values logged.");
+console.log("Verified password-only admin: confirmed owner, isolated authentication D1, allowlisted operations binding only, no Access gate, alternative URLs disabled. No credential values logged.");

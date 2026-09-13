@@ -43,11 +43,16 @@ async function verify() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ vehicleId: "transporter", distanceKm: 18 })
   });
-  assert.equal(quoted.status, 200, "Quote status");
-  const { quote } = await quoted.json();
-  assert.equal(quote.currency, "EUR");
-  assert.equal(quote.kind, "estimate");
-  assert.ok(quote.total > 0);
+  const quotedBody = await quoted.json();
+  if (quoted.status === 422) assert.ok(["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE"].includes(quotedBody.error), "Only an explicitly disabled service may reject this valid estimate");
+  else {
+    assert.equal(quoted.status, 200, "Quote status");
+    const { quote } = quotedBody;
+    assert.equal(quote.currency, "EUR");
+    assert.equal(quote.kind, "estimate");
+    assert.ok(Number.isFinite(quote.total) && quote.total >= 0);
+    assert.ok(quote.pricingVersion, "Pricing version must be traceable");
+  }
 
   const invalid = await get("/api/quotes", {
     method: "POST",

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
-import { calculateQuote, quoteRequestSchema, vehicles } from "../shared/pricing";
+import { quoteRequestSchema } from "../shared/pricing";
+import { publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
 import { drafts, expireDrafts, type DraftBindings } from "./drafts";
 
 type Bindings = DraftBindings;
@@ -21,15 +22,11 @@ app.get("/api/health", async (context) => {
   });
 });
 
-app.get("/api/vehicles", (context) =>
-  context.json({
-    vehicles: Object.values(vehicles).map(({ id, capacityKg, cargoSizeCm }) => ({
-      id,
-      capacityKg,
-      cargoSizeCm
-    }))
-  })
-);
+app.get("/api/vehicles", async c => c.json({ vehicles: Object.values(configuredVehicles(await publishedConfigs(c.env?.DB))) }));
+app.get("/api/content", async c => {
+  const configs = await publishedConfigs(c.env?.DB);
+  return c.json({ items: [...configs.values()].filter(row => row.kind === "content").map(row => ({ id: row.scope, ...JSON.parse(row.data_json) })).filter(item => item.enabled) });
+});
 
 app.post("/api/quotes", async (context) => {
   const body: unknown = await context.req.json().catch(() => null);
@@ -46,7 +43,11 @@ app.post("/api/quotes", async (context) => {
     );
   }
 
-  return context.json({ quote: calculateQuote(parsed.data) });
+  try { return context.json({ quote: quoteWithConfig(parsed.data, await publishedConfigs(context.env?.DB)) }); }
+  catch (error) {
+    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE"].includes(error.message)) return context.json({ error: error.message }, 422);
+    throw error;
+  }
 });
 
 app.notFound((context) => {

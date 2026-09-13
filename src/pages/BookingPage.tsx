@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { blankBooking, blankStop, bookingSchema, quoteInput, validSchedule, type BookingInput, type BookingStop } from "../../shared/booking";
+import { blankBooking, blankStop, createBookingSchema, quoteInput, validSchedule, type BookingInput, type BookingStop } from "../../shared/booking";
 import { vehicles, type QuoteEstimate } from "../../shared/pricing";
 import { ArrowIcon, TruckIcon } from "../components/Icons";
-import { ApiError, getDraft, requestQuote, saveDraft } from "../lib/api";
+import { ApiError, getDraft, getVehicleCatalog, requestQuote, saveDraft } from "../lib/api";
 import { bookingCopy, bookingError } from "../lib/booking-copy";
 import { formatEuro } from "../lib/format";
 import { useLanguage } from "../lib/i18n";
@@ -29,6 +29,13 @@ export function BookingPage() {
   const [error, setError] = useState("");
   const [consent, setConsent] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [catalog, setCatalog] = useState(vehicles);
+  const [catalogReady, setCatalogReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    getVehicleCatalog().then(result => { if (active) { setCatalog(Object.fromEntries(result.vehicles.map(vehicle => [vehicle.id, vehicle])) as typeof vehicles); setCatalogReady(true); } }).catch(() => { if (active) setError(t.failed); });
+    return () => { active = false; };
+  }, []);
   const idempotency = useRef(crypto.randomUUID());
   const [clock, setClock] = useState(Date.now());
   useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
@@ -60,7 +67,8 @@ export function BookingPage() {
     change({ ...booking, dropoffs: next });
   }
   function validate(): BookingInput | null {
-    const result = bookingSchema.safeParse(booking);
+    if (!catalogReady) { setError(t.failed); return null; }
+    const result = createBookingSchema(catalog).safeParse(booking);
     if (!result.success) {
       const capacity = result.error.issues.find((issue) => ["OVERWEIGHT", "OVERSIZED"].includes(issue.message));
       setError(capacity?.message === "OVERWEIGHT" ? t.overweight : capacity ? t.oversized : t.invalid);
@@ -118,7 +126,7 @@ export function BookingPage() {
             <label className="simple-check"><input type="checkbox" checked={booking.cargo.fragile} onChange={(e) => change({ ...booking, cargo: { ...booking.cargo, fragile: e.target.checked } })} />{t.fragile}</label>
           </section>
           <section className="form-section"><div className="form-section__heading"><span>3</span><div><h2>{t.vehicle}</h2></div></div><div className="vehicle-options">
-            {Object.values(vehicles).map((vehicle) => <label key={vehicle.id} className={`vehicle-option ${booking.vehicleId === vehicle.id ? "selected" : ""}`}><TruckIcon size={24} /><span><strong>{vehicleNames[vehicle.id][zh ? 1 : 0]}</strong><small>{vehicle.capacityKg.toLocaleString()} kg · {vehicle.cargoSizeCm.join(" × ")} cm</small></span><input type="radio" name="vehicle" value={vehicle.id} checked={booking.vehicleId === vehicle.id} onChange={() => change({ ...booking, vehicleId: vehicle.id })} /></label>)}
+            {Object.values(catalog).map((vehicle) => <label key={vehicle.id} className={`vehicle-option ${booking.vehicleId === vehicle.id ? "selected" : ""}`}><TruckIcon size={24} /><span><strong>{vehicleNames[vehicle.id][zh ? 1 : 0]}</strong><small>{vehicle.capacityKg.toLocaleString()} kg · {vehicle.cargoSizeCm.join(" × ")} cm</small></span><input type="radio" name="vehicle" value={vehicle.id} checked={booking.vehicleId === vehicle.id} onChange={() => change({ ...booking, vehicleId: vehicle.id })} /></label>)}
           </div></section>
           <section className="form-section"><div className="form-section__heading"><span>4</span><div><h2>{t.when}</h2></div></div>
             <div className="schedule-options"><label className="simple-check"><input type="radio" name="serviceType" checked={booking.serviceType === "on-demand"} onChange={() => change({ ...booking, serviceType: "on-demand", scheduledAt: null })} />{t.immediate}</label><label className="simple-check"><input type="radio" name="serviceType" checked={booking.serviceType === "scheduled"} onChange={() => change({ ...booking, serviceType: "scheduled" })} />{t.scheduled}</label></div>
@@ -132,8 +140,8 @@ export function BookingPage() {
         {saved && <p className="form-success" role="status">{t.saved}</p>}
       </form>
       <aside className="quote-panel" aria-live="polite"><div className="quote-panel__head"><strong>{t.current}</strong><span className="estimate-badge">{t.draftLabel}</span></div>
-        {estimate ? <><div className="quote-total"><strong>{formatEuro(estimate.total, language)}</strong><span>{t.vat}</span></div><div className="quote-route"><TruckIcon /><div><strong>{vehicleNames[booking.vehicleId][zh ? 1 : 0]}</strong><span>{booking.distanceKm} km · {booking.dropoffs.length} {t.dropoff}</span></div></div>
-          <dl className="breakdown">{([['base', t.base], ['distance', t.mileage], ['stops', t.stops], ['services', t.services], ['priority', t.priorityFee]] as const).filter(([key]) => estimate.breakdown[key] > 0).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatEuro(estimate.breakdown[key], language)}</dd></div>)}<div className="breakdown-subtotal"><dt>{t.net}</dt><dd>{formatEuro(estimate.net, language)}</dd></div><div><dt>{t.vat}</dt><dd>{formatEuro(estimate.vat, language)}</dd></div></dl>
+        {estimate ? <><div className="quote-total"><strong>{formatEuro(estimate.total, language)}</strong><span>{zh ? "含工程估算税额" : "Includes estimated tax"}</span></div><p className="field-note">{zh ? "价格版本" : "Pricing version"}: {estimate.pricingVersion ?? "engineering-2026-09"}</p><div className="quote-route"><TruckIcon /><div><strong>{vehicleNames[booking.vehicleId][zh ? 1 : 0]}</strong><span>{booking.distanceKm} km · {booking.dropoffs.length} {t.dropoff}</span></div></div>
+          <dl className="breakdown">{([['base', t.base], ['distance', t.mileage], ['stops', t.stops], ['services', t.services], ['priority', t.priorityFee]] as const).filter(([key]) => estimate.breakdown[key] > 0).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatEuro(estimate.breakdown[key], language)}</dd></div>)}<div className="breakdown-subtotal"><dt>{t.net}</dt><dd>{formatEuro(estimate.net, language)}</dd></div><div><dt>{zh ? "估算税额" : "Estimated tax"} ({Math.round(estimate.vatRate * 10000) / 100}%)</dt><dd>{formatEuro(estimate.vat, language)}</dd></div></dl>
           {expired ? <p className="form-alert">{t.stale}</p> : <p className="field-note">{t.savedQuote}</p>}
           <label className="simple-check consent-check"><input type="checkbox" checked={consent} disabled={busy !== null} onChange={(e) => setConsent(e.target.checked)} /><span>{t.consent} <Link to="/legal/drafts" target="_blank" rel="noreferrer">{t.privacy}</Link></span></label>
           <button type="button" className="button button--full" disabled={busy !== null || expired || !consent} onClick={() => void save()}>{busy === "save" ? t.saving : t.save}</button>

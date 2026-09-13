@@ -5,8 +5,11 @@ import { getCookie, setCookie } from "hono/cookie";
 import { audit, cleanAuthData, consumeLimit, digest, equalToken, fingerprint, getSession, login, sessionSeconds, token, type AdminSession } from "./admin-auth";
 import { hashPassword, validNewPassword, verifyPassword } from "./admin-password";
 import { adminCss, loginHtml, passwordHtml, readyHtml, unavailableHtml } from "./admin-view";
+import { operations } from "./admin-ops";
+import { opsCss } from "./ops-view";
+import { permissionsFor, roles, type Role } from "../shared/operations";
 
-export type AdminBindings = { ENVIRONMENT: string; ADMIN_HOSTNAME: string; ADMIN_DB?: D1Database; ADMIN_AUTH_SECRET?: string };
+export type AdminBindings = { ENVIRONMENT: string; ADMIN_HOSTNAME: string; ADMIN_DB?: D1Database; OPS_DB?: D1Database; ADMIN_AUTH_SECRET?: string };
 type AdminEnv = { Bindings: AdminBindings; Variables: { session: AdminSession; ipHash: string } };
 type AdminContext = Context<AdminEnv>;
 function cookieName(c: AdminContext, type: "session" | "csrf") {
@@ -15,7 +18,7 @@ function cookieName(c: AdminContext, type: "session" | "csrf") {
 function cookie(c: AdminContext, type: "session" | "csrf", value: string, maxAge: number) {
   setCookie(c, cookieName(c, type), value, { path: "/", secure: new URL(c.req.url).protocol === "https:", httpOnly: true, sameSite: "Strict", maxAge });
 }
-function csrf(c: AdminContext) { const value = token(); cookie(c, "csrf", value, 1800); return value; }
+function csrf(c: AdminContext) { const existing = getCookie(c,cookieName(c,"csrf")); const value = existing && /^[a-f0-9]{64}$/.test(existing) ? existing : token(); cookie(c, "csrf", value, 1800); return value; }
 function validCsrf(c: AdminContext, body: Record<string, string | File>) {
   return c.req.header("Origin") === new URL(c.req.url).origin && typeof body.csrf === "string" && equalToken(body.csrf, getCookie(c, cookieName(c, "csrf")));
 }
@@ -24,7 +27,7 @@ function passwordInput(body: Record<string, string | File>, field: string) { ret
 export function createAdminApp() {
   const app = new Hono<AdminEnv>();
   app.use("*", secureHeaders({ referrerPolicy: "same-origin", contentSecurityPolicy: {
-    defaultSrc: ["'none'"], styleSrc: ["'self'"], baseUri: ["'none'"], frameAncestors: ["'none'"], formAction: ["'self'"]
+    defaultSrc: ["'none'"], styleSrc: ["'self'"], imgSrc: ["'self'"], baseUri: ["'none'"], frameAncestors: ["'none'"], formAction: ["'self'"]
   } }));
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store"); c.header("X-Robots-Tag", "noindex, nofollow, noarchive");
@@ -34,10 +37,12 @@ export function createAdminApp() {
     if (url.protocol !== "https:" && !local) return c.redirect(`https://${c.env.ADMIN_HOSTNAME}${url.pathname}`, 308);
     return next();
   });
-  app.use("*", bodyLimit({ maxSize: 8192, onError: c => c.json({ error: "REQUEST_TOO_LARGE" }, 413) }));
+  app.use("*", (c,next) => bodyLimit({ maxSize: /^\/ops\/resource\/[^/]+\/document$/.test(c.req.path) ? 600 * 1024 : c.req.path.startsWith("/ops/") ? 128 * 1024 : 8192, onError: c => c.json({ error: "REQUEST_TOO_LARGE" }, 413) })(c,next));
   app.get("/admin.css", c => c.body(adminCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
+  app.get("/ops.css", c => c.body(opsCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
   app.get("/robots.txt", c => c.text("User-agent: *\nDisallow: /\n"));
-  app.get("/api/health", c => c.json({ service: "moviloq-admin", authentication: "password", configured: !!c.env.ADMIN_DB && /^[a-f0-9]{64}$/.test(c.env.ADMIN_AUTH_SECRET ?? ""), businessDataConnected: false, businessOperationsEnabled: false }));
+  app.get("/favicon.ico", c => c.body(null, 204));
+  app.get("/api/health", c => c.json({ service: "moviloq-admin", authentication: "password", configured: !!c.env.ADMIN_DB && /^[a-f0-9]{64}$/.test(c.env.ADMIN_AUTH_SECRET ?? ""), businessDataConnected: !!c.env.OPS_DB, businessOperationsEnabled: !!c.env.OPS_DB, liveOrdersEnabled: false, paymentsEnabled: false, release: "operations-phase-one" }));
   app.use("*", async (c, next) => {
     if (!c.env.ADMIN_DB || !/^[a-f0-9]{64}$/.test(c.env.ADMIN_AUTH_SECRET ?? "")) return c.req.path.startsWith("/api/")
       ? c.json({ error: "ADMIN_NOT_CONFIGURED" }, 503) : c.html(unavailableHtml, 503);
@@ -71,7 +76,6 @@ export function createAdminApp() {
     cookie(c, "session", result.token, sessionSeconds); cookie(c, "csrf", "", 0);
     return c.redirect("/", 303);
   });
-  app.get("/", c => c.html(readyHtml(csrf(c))));
   app.get("/password", c => c.html(passwordHtml(csrf(c), c.get("session").must_change_password ? "required" : "")));
   app.post("/password", async c => {
     if (!c.req.header("Content-Type")?.startsWith("application/x-www-form-urlencoded")) return c.json({ error: "INVALID_FORM" }, 415);
@@ -103,7 +107,13 @@ export function createAdminApp() {
     await audit(c.env.ADMIN_DB!, "logout", c.get("ipHash"), session.user_id);
     return c.redirect("/login", 303);
   });
-  app.get("/api/admin/session", c => c.json({ role: "owner", permissions: c.get("session").must_change_password ? ["admin:password:change"] : ["admin:readiness:read", "admin:password:change"], passwordChangeRequired: !!c.get("session").must_change_password, businessOperationsEnabled: false }));
+  app.get("/api/admin/session", async c => {
+    const row = await c.env.ADMIN_DB!.prepare("SELECT role FROM admin_users WHERE id=?").bind(c.get("session").user_id).first<{role:Role}>();
+    if(!row || !roles.includes(row.role)) return c.json({error:"FORBIDDEN"},403);
+    return c.json({ role: row.role, permissions: c.get("session").must_change_password ? ["admin:password:change"] : ["admin:readiness:read", "admin:password:change", ...(c.env.OPS_DB ? permissionsFor(row.role) : [])], passwordChangeRequired: !!c.get("session").must_change_password, businessOperationsEnabled: !!c.env.OPS_DB && !c.get("session").must_change_password, liveOrdersEnabled: false, paymentsEnabled: false });
+  });
+  app.route("/", operations);
+  app.get("/", c => c.html(readyHtml(csrf(c))));
   app.all("*", c => c.json({ error: "ADMIN_NOT_ENABLED" }, 403));
   app.onError((_error, c) => { console.error(JSON.stringify({ event: "admin_auth_unavailable", requestId: crypto.randomUUID() })); return c.json({ error: "ADMIN_TEMPORARILY_UNAVAILABLE" }, 503); });
   return app;
