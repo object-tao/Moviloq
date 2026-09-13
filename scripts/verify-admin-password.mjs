@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import process from "node:process";
+import { createHash } from "node:crypto";
 const token = process.env.CLOUDFLARE_API_TOKEN;
 const ownerHash = process.env.MOVILOQ_ADMIN_OWNER_SHA256?.trim();
 assert(token && /^[a-f0-9]{64}$/.test(ownerHash ?? ""), "Admin verification environment is missing");
@@ -23,7 +24,7 @@ const database = await api("/d1/database/308a4a88-a424-41e3-920e-88d9e896fa60");
 const result = await api("/d1/database/308a4a88-a424-41e3-920e-88d9e896fa60/query", { sql: "SELECT id,username,email_sha256,status FROM admin_users", params: [] });
 const owners = result[0].results;
 assert.equal(owners.length, 1, "Expected one provisioned owner");
-assert(owners[0].id === "owner" && owners[0].username === "admin" && owners[0].email_sha256 === ownerHash && owners[0].status === "active", "Unexpected administrator identity/state");
+assert(owners[0].id === "owner" && createHash("sha256").update(owners[0].username).digest("hex") === ownerHash && owners[0].email_sha256 === ownerHash && owners[0].status === "active", "Unexpected administrator identity/state");
 const subdomain = await api("/workers/scripts/moviloq-admin/subdomain");
 assert(subdomain.enabled === false && subdomain.previews_enabled === false, "Alternative origin URLs must remain disabled");
 console.log("Verified password-only admin: confirmed owner, dedicated authentication D1, no Access gate or business bindings, alternative URLs disabled. No credential values logged.");

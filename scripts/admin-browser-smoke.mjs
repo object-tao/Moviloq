@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import process from "node:process";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
@@ -21,8 +21,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({
 let browser;
 try {
   const db = await mf.getD1Database("ADMIN_DB");
-  const schema = await readFile("admin-migrations/0001_admin_password_auth.sql", "utf8");
-  for (const sql of schema.split(";").filter(s => s.trim())) await db.prepare(sql).run();
+  for (const name of (await readdir("admin-migrations")).filter(name => name.endsWith(".sql")).sort()) {
+    const schema = await readFile(join("admin-migrations", name), "utf8");
+    for (const sql of schema.split(";").filter(s => s.trim())) await db.prepare(sql).run();
+  }
   const at = Math.floor(Date.now() / 1000);
   await db.prepare("INSERT INTO admin_users (id,username,email_sha256,password_hash,created_at,updated_at) VALUES (?,?,?,?,?,?)")
     .bind("synthetic-owner", "admin", createHash("sha256").update("test@example.test").digest("hex"), hashPassword(password), at, at).run();
@@ -67,5 +69,15 @@ try {
     assert.equal((await context.request.get(origin + "/api/admin/session", { headers: { Cookie: `moviloq-admin-session=${oldCookie.value}` } })).status(), 401);
     await context.close();
   }
+  await db.prepare("UPDATE admin_users SET must_change_password = 1 WHERE id = 'synthetic-owner'").run();
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage(); await page.goto(origin + "/login");
+  await page.locator("#username").fill("test@example.test"); await page.locator("#password").fill(replacement);
+  await page.getByRole("button", { name: "登录 / Sign in" }).click(); await page.waitForURL("**/password");
+  assert(await page.getByRole("alert").getByText("首次登录", { exact: false }).isVisible());
+  const limited = await (await context.request.get(origin + "/api/admin/session")).json();
+  assert.deepEqual(limited.permissions, ["admin:password:change"]); assert.equal(limited.passwordChangeRequired, true);
+  await page.screenshot({ path: join(destination, "admin-first-login-mobile.png"), fullPage: true });
+  await context.close();
   console.log("Verified real workerd/D1 administrator login, password change, logout/revocation, blocked business APIs, and 1440/390/320px browser layouts using synthetic credentials only.");
 } finally { if (browser) await browser.close(); await mf.dispose(); }

@@ -11,7 +11,7 @@ export function equalToken(a?: string, b?: string): boolean {
 }
 export const fingerprint = (value: string, secret: string) => createHmac("sha256", secret).update(value).digest("hex");
 export type AdminUser = { id: string; username: string; password_hash: string; credential_version: number; status: string };
-export type AdminSession = { user_id: string; token_hash: string; credential_version: number; expires_at: number; last_seen_at: number };
+export type AdminSession = { user_id: string; token_hash: string; credential_version: number; expires_at: number; last_seen_at: number; must_change_password: number };
 const now = () => Math.floor(Date.now() / 1000);
 
 export async function consumeLimit(db: D1Database, key: string, maximum: number, at = now()): Promise<boolean> {
@@ -51,7 +51,7 @@ export async function login(db: D1Database, username: string, password: string, 
 }
 export async function getSession(db: D1Database, raw?: string, at = now()): Promise<AdminSession | null> {
   if (!raw || !/^[a-f0-9]{64}$/.test(raw)) return null;
-  const session = await db.prepare(`SELECT s.* FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+  const session = await db.prepare(`SELECT s.*, u.must_change_password FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
     WHERE s.token_hash = ? AND s.expires_at > ? AND s.last_seen_at > ? AND u.status = 'active' AND u.credential_version = s.credential_version`)
     .bind(digest(raw), at, at - idleSeconds).first<AdminSession>();
   if (!session) return null;

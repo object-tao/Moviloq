@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
-import { audit, cleanAuthData, consumeLimit, equalToken, fingerprint, getSession, login, sessionSeconds, token, type AdminSession } from "./admin-auth";
+import { audit, cleanAuthData, consumeLimit, digest, equalToken, fingerprint, getSession, login, sessionSeconds, token, type AdminSession } from "./admin-auth";
 import { hashPassword, validNewPassword, verifyPassword } from "./admin-password";
 import { adminCss, loginHtml, passwordHtml, readyHtml, unavailableHtml } from "./admin-view";
 
@@ -46,7 +46,12 @@ export function createAdminApp() {
     const session = await getSession(c.env.ADMIN_DB, getCookie(c, cookieName(c, "session")));
     if (!session) return c.req.path.startsWith("/api/") || c.req.method !== "GET"
       ? c.json({ error: "AUTHENTICATION_REQUIRED" }, 401) : c.redirect("/login", 303);
-    c.set("session", session); return next();
+    c.set("session", session);
+    if (session.must_change_password && !["/password", "/logout", "/api/admin/session"].includes(c.req.path)) {
+      return c.req.method === "GET" && !c.req.path.startsWith("/api/")
+        ? c.redirect("/password", 303) : c.json({ error: "PASSWORD_CHANGE_REQUIRED" }, 403);
+    }
+    return next();
   });
   app.get("/login", async c => {
     if (await getSession(c.env.ADMIN_DB!, getCookie(c, cookieName(c, "session")))) return c.redirect("/", 303);
@@ -67,7 +72,7 @@ export function createAdminApp() {
     return c.redirect("/", 303);
   });
   app.get("/", c => c.html(readyHtml(csrf(c))));
-  app.get("/password", c => c.html(passwordHtml(csrf(c))));
+  app.get("/password", c => c.html(passwordHtml(csrf(c), c.get("session").must_change_password ? "required" : "")));
   app.post("/password", async c => {
     if (!c.req.header("Content-Type")?.startsWith("application/x-www-form-urlencoded")) return c.json({ error: "INVALID_FORM" }, 415);
     const body = await c.req.parseBody(); if (!validCsrf(c, body)) return c.json({ error: "INVALID_CSRF" }, 403);
@@ -75,12 +80,13 @@ export function createAdminApp() {
     if (!await consumeLimit(db, `password:${session.user_id}`, 5)) { c.header("Retry-After", "900"); return c.html(passwordHtml(csrf(c), "limited"), 429); }
     const current = passwordInput(body, "current"); const password = passwordInput(body, "password");
     if (!validNewPassword(password) || password !== passwordInput(body, "confirmation")) return c.html(passwordHtml(csrf(c), "requirements"), 400);
-    const user = await db.prepare("SELECT password_hash FROM admin_users WHERE id = ? AND credential_version = ? AND status = 'active'").bind(session.user_id, session.credential_version).first<{ password_hash: string }>();
+    const user = await db.prepare("SELECT password_hash, username, email_sha256 FROM admin_users WHERE id = ? AND credential_version = ? AND status = 'active'").bind(session.user_id, session.credential_version).first<{ password_hash: string; username: string; email_sha256: string }>();
     if (!user || !verifyPassword(current, user.password_hash)) return c.html(passwordHtml(csrf(c), "invalid"), 401);
     if (password === current) return c.html(passwordHtml(csrf(c), "different"), 400);
+    if (password.trim().toLowerCase() === user.username || digest(password.trim().toLowerCase()) === user.email_sha256) return c.html(passwordHtml(csrf(c), "independent"), 400);
     const encoded = hashPassword(password); const at = Math.floor(Date.now() / 1000);
     const results = await db.batch([
-      db.prepare("UPDATE admin_users SET password_hash = ?, credential_version = credential_version + 1, updated_at = ? WHERE id = ? AND credential_version = ? AND status = 'active'").bind(encoded, at, session.user_id, session.credential_version),
+      db.prepare("UPDATE admin_users SET password_hash = ?, must_change_password = 0, credential_version = credential_version + 1, updated_at = ? WHERE id = ? AND credential_version = ? AND status = 'active'").bind(encoded, at, session.user_id, session.credential_version),
       db.prepare("DELETE FROM admin_sessions WHERE user_id = ?").bind(session.user_id),
     ]);
     cookie(c, "session", "", 0); cookie(c, "csrf", "", 0);
@@ -97,7 +103,7 @@ export function createAdminApp() {
     await audit(c.env.ADMIN_DB!, "logout", c.get("ipHash"), session.user_id);
     return c.redirect("/login", 303);
   });
-  app.get("/api/admin/session", c => c.json({ role: "owner", permissions: ["admin:readiness:read", "admin:password:change"], businessOperationsEnabled: false }));
+  app.get("/api/admin/session", c => c.json({ role: "owner", permissions: c.get("session").must_change_password ? ["admin:password:change"] : ["admin:readiness:read", "admin:password:change"], passwordChangeRequired: !!c.get("session").must_change_password, businessOperationsEnabled: false }));
   app.all("*", c => c.json({ error: "ADMIN_NOT_ENABLED" }, 403));
   app.onError((_error, c) => { console.error(JSON.stringify({ event: "admin_auth_unavailable", requestId: crypto.randomUUID() })); return c.json({ error: "ADMIN_TEMPORARILY_UNAVAILABLE" }, 503); });
   return app;

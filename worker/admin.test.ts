@@ -93,6 +93,29 @@ describe("own administrator login", () => {
     expect((await post("/password", { current: password, password: second, confirmation: "different" }, await form("/password"))).status).toBe(400);
     expect(fixture.sqlite.prepare("SELECT credential_version FROM admin_users").get()?.credential_version).toBe(1);
   });
+  it("restricts temporary-password sessions until an independent password is set", async () => {
+    fixture.sqlite.exec("UPDATE admin_users SET must_change_password = 1");
+    await signIn();
+    const root = await request("/"); expect(root.status).toBe(303); expect(root.headers.get("Location")).toBe("/password");
+    const identity = await (await request("/api/admin/session")).json();
+    expect(identity).toMatchObject({ passwordChangeRequired: true, permissions: ["admin:password:change"] });
+    expect((await request("/api/admin/orders")).status).toBe(403);
+    expect((await request("/api/admin/orders", { method: "POST" })).status).toBe(403);
+    expect(await (await request("/password")).text()).toContain("首次登录请先修改临时密码");
+    const next = "new independent synthetic passphrase";
+    const res = await post("/password", { current: password, password: next, confirmation: next }, await form("/password"));
+    expect(res.status).toBe(303);
+    expect(fixture.sqlite.prepare("SELECT must_change_password FROM admin_users").get()?.must_change_password).toBe(0);
+    expect((await post("/login", { username: "admin", password: next }, await form())).status).toBe(303);
+    expect((await request("/")).status).toBe(200);
+  });
+  it("rejects an account/email-derived replacement without clearing the temporary restriction", async () => {
+    fixture.sqlite.exec("UPDATE admin_users SET must_change_password = 1");
+    await signIn(); const bad = "OWNER@EXAMPLE.TEST";
+    const res = await post("/password", { current: password, password: bad, confirmation: bad }, await form("/password"));
+    expect(res.status).toBe(400); expect(await res.text()).toContain("新密码不能与账号或邮箱相同");
+    expect(fixture.sqlite.prepare("SELECT must_change_password FROM admin_users").get()?.must_change_password).toBe(1);
+  });
   it("fails closed on missing configuration or database errors", async () => {
     expect((await request("/login", {}, { ...env, ADMIN_AUTH_SECRET: undefined })).status).toBe(503);
     expect((await request("/login", {}, { ...env, ADMIN_DB: undefined })).status).toBe(503);

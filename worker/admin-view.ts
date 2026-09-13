@@ -6,6 +6,8 @@ function page(title: string, content: string, controls = '<span class="private-l
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Moviloq · ${title}</title><link rel="stylesheet" href="/admin.css"></head><body><header><a class="brand" href="https://moviloq.com"><span class="mark">M</span>moviloq<span class="brand-label">ADMIN</span></a>${controls}</header>${content}<footer><span>Moviloq · Frankfurt am Main</span><span>管理入口 / Administration</span></footer></body></html>`;
 }
 const messages: Record<string, string> = {
+  required: "首次登录请先修改临时密码，再进入工作台。 / Change your temporary password before entering the workspace.",
+  independent: "新密码不能与账号或邮箱相同。 / Your new password must differ from your account and email.",
   invalid: "账号或密码不正确。 / Incorrect account or password.",
   limited: "尝试次数过多，请在 15 分钟后重试。 / Too many attempts. Please retry in 15 minutes.",
   changed: "密码已更新，请重新登录。 / Password updated. Please sign in again.",

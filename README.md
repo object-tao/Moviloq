@@ -4,7 +4,7 @@ Moviloq is a bilingual logistics marketplace being built for an initial pilot in
 
 This repository is in active development. It does **not** yet accept binding orders, payments or partner applications.
 
-Administration has a separate endpoint at [admin.moviloq.com](https://admin.moviloq.com) with self-owned username/password authentication, as requested by the owner. No email OTP or MFA is required. Salted scrypt password hashes, centralized throttling and revocable server-side sessions live in a dedicated authentication D1 database; no customer business data is bound. Only readiness, password change and logout are available. The owner sets their password privately on a local setup page. See the [admin / driver / fleet plan](docs/admin-driver-fleet-plan.md) and [password setup and recovery](docs/admin-access-setup.md).
+Administration has a separate endpoint at [admin.moviloq.com](https://admin.moviloq.com) with self-owned email/password authentication, as requested by the owner. No email OTP or MFA is required. Salted scrypt password hashes, centralized throttling and revocable server-side sessions live in a dedicated authentication D1 database; no customer business data is bound. Only readiness, password change and logout are available. Temporary initial credentials require an independent password change before entering the workspace. See the [admin / driver / fleet plan](docs/admin-driver-fleet-plan.md) and [password setup and recovery](docs/admin-access-setup.md).
 
 ## What is implemented
 

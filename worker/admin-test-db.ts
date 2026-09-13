@@ -1,11 +1,12 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { URL } from "node:url";
 
 // Real SQLite executes production SQL. The later workerd smoke covers the D1 binding.
 export function testDatabase() {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(new URL("../admin-migrations/0001_admin_password_auth.sql", import.meta.url), "utf8"));
+  const directory = new URL("../admin-migrations/", import.meta.url);
+  for (const name of readdirSync(directory).filter(name => name.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(name, directory), "utf8"));
   class Statement {
     constructor(readonly sql: string, readonly params: SQLInputValue[] = []) {}
     bind(...params: SQLInputValue[]) { return new Statement(this.sql, params); }
