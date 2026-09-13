@@ -63,7 +63,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
-            d1 migrations apply DB --remote
+            d1 migrations apply DB --remote --config wrangler.preview.json --env preview
             deploy --name moviloq-pr-${{ github.event.pull_request.number }}
 
       - name: Verify preview website and API

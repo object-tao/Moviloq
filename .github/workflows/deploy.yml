@@ -52,7 +52,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
-            d1 migrations apply DB --remote
+            d1 migrations apply DB --remote --config wrangler.jsonc --env production
             deploy
 
       - name: Verify public website and API

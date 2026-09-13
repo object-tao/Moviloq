@@ -6,7 +6,7 @@ const env = { ...process.env, CLOUDFLARE_ENV: "production", WRANGLER_SEND_METRIC
 delete env.MOVILOQ_WRANGLER_CONFIG;
 for (const args of [
   ["node_modules/vite/bin/vite.js", "build"],
-  ["node_modules/wrangler/bin/wrangler.js", "d1", "migrations", "apply", "DB", "--remote"],
+  ["node_modules/wrangler/bin/wrangler.js", "d1", "migrations", "apply", "DB", "--remote", "--config", "wrangler.jsonc", "--env", "production"],
   ["node_modules/wrangler/bin/wrangler.js", "deploy"]
 ]) {
   const result = spawnSync(process.execPath, args, { env, stdio: "inherit" });
