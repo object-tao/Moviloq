@@ -28,6 +28,8 @@ Once enabled, a merge or push to `main` runs lint, type checking, tests and a bu
 
 The Vite build uses `CLOUDFLARE_ENV=production` or `CLOUDFLARE_ENV=preview`. Production binds `moviloq.com` and `www.moviloq.com`; preview builds have an explicitly empty routes list and no production data bindings. Wrangler deploys the flattened configuration produced by Vite.
 
+Preview cleanup uses the Cloudflare Worker API directly, so it needs no KV storage permissions. Before deletion it validates the numbered `moviloq-pr-<number>` name and the Worker's `ENVIRONMENT=preview` marker. An already-absent Worker is treated as a successful cleanup, making retries safe.
+
 Each deployment runs `scripts/smoke.mjs` against its public HTTPS URL. It verifies the environment reported by the API, homepage, JavaScript asset, direct `/book` navigation, a valid quote, validation errors and missing API routes. Failed checks mark the workflow failed; they do not silently roll back a release.
 
 ## 4. Create D1 when persistence work begins
