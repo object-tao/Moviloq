@@ -101,6 +101,8 @@ export type QuoteEstimate = {
   breakdown: QuoteBreakdown;
   validForMinutes: number;
   kind: "estimate";
+  quotedAt: string;
+  expiresAt: string;
 };
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
@@ -110,12 +112,12 @@ export function calculateQuote(input: QuoteRequest): QuoteEstimate {
   const vehicle = vehicles[parsed.vehicleId];
   const chargeableKm = Math.max(0, parsed.distanceKm - vehicle.includedKm);
   const base = vehicle.baseNet;
-  const distance = chargeableKm * vehicle.perKmNet;
+  const distance = roundMoney(chargeableKm * vehicle.perKmNet);
   const stops = parsed.extraStops * 4.5;
   const services = (parsed.loadingHelp ? 25.21 : 0) + (parsed.helper ? 25.21 : 0);
   const wait = Math.max(0, Math.ceil((parsed.waitMinutes - 10) / 5)) * 3;
   const beforePriority = base + distance + stops + services + wait;
-  const priority = parsed.priority ? beforePriority * 0.12 : 0;
+  const priority = parsed.priority ? roundMoney(beforePriority * 0.12) : 0;
   const net = roundMoney(beforePriority + priority);
   const vatRate = 0.19;
   const vat = roundMoney(net * vatRate);
@@ -135,6 +137,8 @@ export function calculateQuote(input: QuoteRequest): QuoteEstimate {
       priority: roundMoney(priority)
     },
     validForMinutes: 10,
-    kind: "estimate"
+    kind: "estimate",
+    quotedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString()
   };
 }

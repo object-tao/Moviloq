@@ -1,23 +1,25 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { calculateQuote, quoteRequestSchema, vehicles } from "../shared/pricing";
+import { drafts, expireDrafts, type DraftBindings } from "./drafts";
 
-type Bindings = {
-  ENVIRONMENT?: string;
-};
+type Bindings = DraftBindings;
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.use("/api/*", secureHeaders());
+app.route("/api/drafts", drafts);
 
-app.get("/api/health", (context) =>
-  context.json({
+app.get("/api/health", async (context) => {
+  if (context.env.DB) await context.env.DB.prepare("SELECT 1 FROM visitor_sessions LIMIT 1").all();
+  return context.json({
     ok: true,
     service: "moviloq",
     environment: context.env.ENVIRONMENT ?? "development",
-    timestamp: new Date().toISOString()
-  })
-);
+    timestamp: new Date().toISOString(),
+    storage: context.env.DB ? "ready" : "unconfigured"
+  });
+});
 
 app.get("/api/vehicles", (context) =>
   context.json({
@@ -60,4 +62,5 @@ app.onError((error, context) => {
   return context.json({ error: "INTERNAL_ERROR", message: "Something went wrong." }, 500);
 });
 
-export default app;
+export { app };
+export default { fetch: app.fetch, scheduled: (_event: ScheduledController, env: Bindings, ctx: ExecutionContext) => ctx.waitUntil(expireDrafts(env)) };

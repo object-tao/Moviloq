@@ -34,5 +34,15 @@ if (settings === null) {
   );
   await request(endpoint, "DELETE");
   assert.equal(await request(`${endpoint}/settings`), null, "Preview Worker still exists after deletion");
-  console.log(`Removed ${workerName}; other Workers and data stores are unchanged.`);
+  console.log(`Removed preview Worker ${workerName}.`);
 }
+
+// Each PR owns a database with the exact same name. Never delete by a supplied ID.
+const databaseEndpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database`;
+const databases = await request(`${databaseEndpoint}?name=${workerName}`);
+for (const db of databases.filter((database) => database.name === workerName)) {
+  assert.match(db.uuid, /^[a-f0-9-]{36}$/);
+  await request(`${databaseEndpoint}/${db.uuid}`, "DELETE");
+  console.log(`Removed temporary database ${workerName}.`);
+}
+assert.ok(!(await request(`${databaseEndpoint}?name=${workerName}`)).some((database) => database.name === workerName), "Preview database still exists after deletion");

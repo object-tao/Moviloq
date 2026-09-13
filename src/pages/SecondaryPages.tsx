@@ -106,6 +106,24 @@ export function LoginPage() {
 
 export function LegalPage() {
   const { document = "terms" } = useParams();
+  const { language } = useLanguage();
+  if (document === "drafts") {
+    const zh = language === "zh";
+    return <section className="legal-page"><div className="container legal-copy">
+      <span className="kicker">Moviloq / {zh ? "开发测试" : "Development preview"}</span>
+      <h1>{zh ? "草稿如何保存" : "How drafts are stored"}</h1>
+      <div className="legal-notice"><ShieldIcon /><div><strong>{zh ? "目前请使用示例资料" : "Please use sample details for now"}</strong><p>{zh ? "公司尚待注册，正式隐私政策和运输条款仍需专业审核。本页只说明已实现的草稿存储行为，不是完整的隐私政策。" : "Entity registration and professional review of privacy and transport terms are pending. This page explains implemented storage behaviour; it is not a complete privacy policy."}</p></div></div>
+      <h2>{zh ? "保存哪些资料" : "What is saved"}</h2>
+      <p>{zh ? "仅在你点击保存后，路线、选填的联系人和电话、货物资料、时间、车型、备注及服务器计算的估价会保存在 Cloudflare D1 中。请勿填写敏感个人信息。" : "Only after you choose Save, your route, optional contact names and phone numbers, cargo details, schedule, vehicle, notes and server-calculated estimate are stored in Cloudflare D1. Do not include sensitive personal information."}</p>
+      <h2>{zh ? "浏览器访问凭据" : "Browser access credential"}</h2>
+      <p>{zh ? "首次保存会设置仅用于访问草稿的 Cookie（HttpOnly、HTTPS 下 Secure、SameSite=Strict）。数据库仅存其哈希值。它不是注册账户：当前浏览器的使用者都可能访问草稿。不同设备、无痕窗口，以及 moviloq.com 与 www.moviloq.com 之间不共享草稿；清除 Cookie 将失去访问权限。" : "The first save sets an access cookie (HttpOnly, Secure over HTTPS, SameSite=Strict). Only its hash is stored in the database. This is not an account: others using the same browser may access drafts. Devices, private windows, and moviloq.com versus www.moviloq.com do not share drafts. Clearing cookies removes access."}</p>
+      <h2>{zh ? "到期与删除" : "Expiry and deletion"}</h2>
+      <p>{zh ? "每个草稿空间最多 30 份草稿，在首次保存起 30 天后统一到期，后续修改不会延长。到期即无法通过 API 访问，每日清理任务删除主数据库中的到期记录。也可随时在“我的草稿”中删除单份。服务商备份可能在其恢复保留期内仍包含已删除记录。" : "A workspace holds up to 30 drafts and expires 30 days after its first save; edits do not extend this. API access ends at expiry, and a daily cleanup removes expired records from the live database. You can delete individual drafts from My drafts at any time. Provider backups may retain deleted records during their recovery retention period."}</p>
+      <h2>{zh ? "存储位置与服务范围" : "Storage location and service scope"}</h2>
+      <p>{zh ? "D1 数据库使用欧盟辖区设置。这不代表全部网络处理均发生在欧盟，也不代表已完成隐私合规审核。草稿不会向司机发布、形成运输合同或收取费用。" : "D1 uses the EU jurisdiction setting. This does not mean all network processing occurs in the EU or that a privacy compliance review is complete. Drafts are not sent to drivers, do not create transport contracts and do not collect payment."}</p>
+      <Link className="button button--ghost" to="/drafts">{zh ? "返回我的草稿" : "Back to My drafts"}</Link>
+    </div></section>;
+  }
   const titles: Record<string, string> = { privacy: "Privacy policy", terms: "Terms of service", imprint: "Imprint" };
   return (
     <section className="legal-page">

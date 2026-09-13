@@ -12,7 +12,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "pnpm build && vite preview",
-    "deploy": "pnpm build && wrangler deploy",
+    "deploy": "node scripts/deploy.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -20,7 +20,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "cf:typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply moviloq --local --config wrangler.local.jsonc",
-    "db:migrate:remote": "wrangler d1 migrations apply moviloq --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote --env production --config wrangler.jsonc"
   },
   "dependencies": {
     "hono": "4.13.7",
@@ -35,11 +35,13 @@
     "@eslint/js": "10.0.1",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
+    "@types/node": "^24.13.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "eslint": "10.10.0",
     "jsdom": "30.0.1",
+    "playwright-core": "1.63.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.0",
     "vite": "8.3.0",

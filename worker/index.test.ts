@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import app from "./index";
+import { app } from "./index";
 
 describe("Moviloq API", () => {
   it("reports a healthy test environment", async () => {
