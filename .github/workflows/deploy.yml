@@ -15,13 +15,16 @@ concurrency:
 
 jobs:
   deploy:
-    if: vars.CLOUDFLARE_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main' && (vars.CLOUDFLARE_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch')
     name: Deploy Cloudflare Worker
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
       name: production
       url: https://moviloq.com
+    env:
+      CLOUDFLARE_ENV: production
+      WRANGLER_SEND_METRICS: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -49,3 +52,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+
+      - name: Verify public website and API
+        run: |
+          node scripts/smoke.mjs https://moviloq.com production
+          node scripts/smoke.mjs https://www.moviloq.com production

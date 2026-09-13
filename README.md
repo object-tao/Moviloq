@@ -59,7 +59,7 @@ docs/                architecture and deployment notes
 
 ## Delivery status
 
-The production workflow remains disabled until Cloudflare credentials are added to GitHub and the enable variable is set. See [deployment setup](docs/deployment.md) and [architecture](docs/architecture.md).
+Production and preview workflows use GitHub environment secrets. Production publishes `main` to [moviloq.com](https://moviloq.com) after the quality gate; same-repository pull requests receive isolated Workers previews. Each deployment verifies its public website and API, and closing a pull request removes its preview. Repository variables allow automatic deployments to be paused. See [deployment setup](docs/deployment.md) and [architecture](docs/architecture.md).
 
 ## Product and legal notes
 

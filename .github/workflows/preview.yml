@@ -24,6 +24,10 @@ jobs:
     timeout-minutes: 15
     environment:
       name: preview
+      url: https://moviloq-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
+    env:
+      CLOUDFLARE_ENV: preview
+      WRANGLER_SEND_METRICS: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -52,6 +56,11 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --name moviloq-pr-${{ github.event.pull_request.number }}
 
+      - name: Verify preview website and API
+        env:
+          PREVIEW_URL: https://moviloq-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
+        run: node scripts/smoke.mjs "$PREVIEW_URL" preview
+
   remove-preview:
     if: >-
       github.event.action == 'closed' &&
@@ -60,9 +69,13 @@ jobs:
     name: Remove PR preview
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: preview
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6

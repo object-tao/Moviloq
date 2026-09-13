@@ -3,6 +3,9 @@ dist/
 .wrangler/
 .dev.vars
 .dev.vars.*
+.env
+.env.*
+!.env.example
 !.dev.vars.example
 coverage/
 *.local

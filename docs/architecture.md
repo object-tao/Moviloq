@@ -34,7 +34,7 @@ feature branch -> pull request -> CI quality gate -> optional Cloudflare preview
 main branch ------------------------------------> production Worker
 ```
 
-Production and preview deployments are disabled by repository variables until the Cloudflare API token and account ID are configured. This keeps the initial repository setup green and prevents accidental publishing.
+Production and preview credentials are stored in separate GitHub environments. Vite selects the deployment environment at build time: only production carries custom domain bindings. Repository variables can pause either workflow. Deployment smoke checks verify both the website and API over HTTPS.
 
 ## Planned service boundaries
 
