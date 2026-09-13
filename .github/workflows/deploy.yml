@@ -46,6 +46,12 @@ jobs:
       - name: Run quality gate
         run: pnpm check
 
+      - name: Verify administrator Access policy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MOVILOQ_ADMIN_OWNER_SHA256: ${{ secrets.MOVILOQ_ADMIN_OWNER_SHA256 }}
+        run: node scripts/verify-admin-access.mjs
+
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v4
         with:
@@ -61,3 +67,9 @@ jobs:
           node scripts/smoke.mjs https://moviloq.com production
           node scripts/smoke.mjs https://www.moviloq.com production
           node scripts/admin-smoke.mjs https://admin.moviloq.com
+
+      - name: Verify administrator origin stays isolated
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MOVILOQ_ADMIN_OWNER_SHA256: ${{ secrets.MOVILOQ_ADMIN_OWNER_SHA256 }}
+        run: node scripts/verify-admin-access.mjs
