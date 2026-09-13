@@ -14,6 +14,8 @@ const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 async function noOverflow() {
+  // Chromium can acknowledge viewport resizing before all media-query styles settle.
+  await page.evaluate(() => new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
   const metrics = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: window.innerWidth, overflowing: [...document.querySelectorAll("*")].filter((element) => element.getBoundingClientRect().right > window.innerWidth).map((element) => ({ tag: element.tagName, className: element.className })) }));
   assert.ok(metrics.scroll <= metrics.viewport, `Horizontal overflow: ${JSON.stringify(metrics)}`);
 }

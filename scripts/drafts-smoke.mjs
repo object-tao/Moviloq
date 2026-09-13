@@ -17,7 +17,7 @@ async function api(path = "", { method = "GET", body, headers, anonymous = false
     method, headers: { Origin: origin, "Content-Type": "application/json", ...(!anonymous && cookie ? { Cookie: cookie } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body), signal: globalThis.AbortSignal.timeout(20000)
   });
-  assert.equal(response.headers.get("cache-control"), "no-store", "Private data must not be cached");
+  assert.match(response.headers.get("cache-control") ?? "", /(?:^|,)\s*no-store(?:,|$)/i, "Private data must not be cached");
   return response;
 }
 try {

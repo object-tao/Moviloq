@@ -21,7 +21,7 @@ async function verify() {
   const drafts = await get("/api/drafts");
   assert.equal(drafts.status, 200);
   assert.deepEqual(await drafts.json(), { drafts: [] });
-  assert.equal(drafts.headers.get("cache-control"), "no-store");
+  assert.match(drafts.headers.get("cache-control") ?? "", /(?:^|,)\s*no-store(?:,|$)/i);
 
   const homepage = await get("/");
   assert.equal(homepage.status, 200, "Homepage status");
