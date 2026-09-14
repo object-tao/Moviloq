@@ -9,6 +9,7 @@ import { reviewContext, mutate, revision, guard } from "./ops-store";
 import { configuredVehicles, publishedConfigs, quoteWithConfig } from "./public-config";
 import { app as publicApp } from "./index";
 import { blankBooking } from "../shared/booking";
+import { fleetDialogHash } from "./ops-fleet-dialog";
 
 const origin="https://admin.moviloq.com";
 const app=createAdminApp();
@@ -22,7 +23,7 @@ afterEach(()=>{auth.sqlite.close();ops.sqlite.close();});
 function signIn(role:Role){const raw=crypto.randomUUID().replaceAll("-","").repeat(2);const at=Math.floor(Date.now()/1000);auth.sqlite.prepare("INSERT INTO admin_sessions(token_hash,user_id,credential_version,created_at,last_seen_at,expires_at) VALUES(?,?,1,?,?,?)").run(digest(raw),role,at,at,at+3600);jar.set("__Host-moviloq-admin-session",raw);}
 async function request(path:string,init:RequestInit={}){const headers=new Headers(init.headers);headers.set("Cookie",[...jar].map(([key,val])=>`${key}=${val}`).join("; "));const res=await app.fetch(new Request(origin+path,{...init,headers}),env);for(const item of res.headers.getSetCookie()){const pair=item.split(";")[0];const i=pair.indexOf("=");jar.set(pair.slice(0,i),pair.slice(i+1));}return res;}
 async function csrf(){await request("/");return jar.get("__Host-moviloq-admin-csrf")!;}
-async function post(path:string,data:Record<string,string|string[]>={},source=origin){const body=new URLSearchParams({csrf:await csrf()});for(const[key,vals]of Object.entries(data))for(const val of Array.isArray(vals)?vals:[vals])body.append(key,val);return request(path,{method:"POST",headers:{Origin:source,"Content-Type":"application/x-www-form-urlencoded"},body});}
+async function post(path:string,data:Record<string,string|string[]>={},source=origin,accept=""){const body=new URLSearchParams({csrf:await csrf()});for(const[key,vals]of Object.entries(data))for(const val of Array.isArray(vals)?vals:[vals])body.append(key,val);return request(path,{method:"POST",headers:{Origin:source,"Content-Type":"application/x-www-form-urlencoded",...(accept?{Accept:accept}:{})},body});}
 async function success(res:Response){expect(res.status,await res.clone().text()).toBe(303);return res.headers.get("location")!;}
 const common={source:"Synthetic authorized test fixture",authorized:"on",reason:"Synthetic preparation test"};
 async function create(kind="fleet",extra:Record<string,string|string[]>={}){const data:Record<string,string|string[]>=kind==="fleet"?{legalName:"Example Test GmbH"}:kind==="driver"?{vehicleClasses:["transporter"]}:{vehicleClass:"transporter",registration:crypto.randomUUID().slice(0,8),country:"DE",capacityKg:"1000",lengthCm:"320",widthCm:"140",heightCm:"180"};const location=await success(await post(`/ops/resources/${kind}/create`,{...common,name:`Test ${kind}`,...data,...extra}));return location.split("/")[3].split("?")[0];}
@@ -35,6 +36,32 @@ async function approve(id:string){await success(await upload(id));const doc=last
 function stringData(data:Record<string,unknown>){return Object.fromEntries(Object.entries(data).map(([key,val])=>[key,typeof val==="boolean"?val?"on":"":String(val)]));}
 async function price(base:number){const location=await success(await post("/ops/configs/create",{kind:"pricing",scope:"transporter",title:`Test pricing ${base}`,...stringData({...defaultPricing("transporter"),baseNet:base}),reason:"Create test pricing"}));return location.split("/")[3].split("?")[0];}
 describe("operations preparation",()=>{
+  it("shows a fleet creation dialog and right-side actions scoped to staff permissions",async()=>{
+    const id=await create();const res=await request("/ops/resources/fleet");const html=await res.text();
+    expect(html).toContain('id="fleet-create-dialog"');expect(html).toContain('aria-haspopup="dialog"');expect(html).toContain("新增车队");expect(html).toContain('name="return_to" value="fleet-list"');
+    const actions=html.match(/<div class="row-actions">([\s\S]*?)<\/div>/)?.[1];
+    expect(actions).toContain(`href="/ops/resource/${id}">编辑`);expect(actions).toContain(`href="/ops/reviews/resource/${id}">审核编辑`);
+    expect(res.headers.get("Content-Security-Policy")).toContain(`script-src '${fleetDialogHash}'`);expect(res.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
+    expect((await request("/login")).headers.get("Content-Security-Policy")).not.toContain("script-src");
+    signIn("operations");const operator=await(await request("/ops/resources/fleet")).text();expect(operator).toContain('id="fleet-create-dialog"');expect(operator).toContain(">查看审核</a>");expect(operator).not.toContain(">审核编辑</a>");
+    signIn("reviewer");const reviewer=await(await request("/ops/resources/fleet")).text();expect(reviewer).not.toContain('id="fleet-create-dialog"');expect(reviewer).not.toContain(">编辑</a>");expect(reviewer).toContain(">审核编辑</a>");
+    expect(await(await request("/ops/resources/driver")).text()).not.toContain('id="fleet-create-dialog"');
+  });
+  it("saves a modal fleet as an audited draft with a fixed list redirect and supports non-JS fallback",async()=>{
+    const fields={...common,name:"Modal fleet",legalName:"Modal company",return_to:"fleet-list"};
+    const response=await post("/ops/resources/fleet/create",fields,origin,"application/json");expect(response.status).toBe(201);expect(await response.json()).toEqual({redirect:"/ops/resources/fleet?created=1"});
+    expect(ops.sqlite.prepare("SELECT kind,status FROM ops_resources").get()).toMatchObject({kind:"fleet",status:"draft"});expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE action='resource.created'").get()?.n).toBe(1);expect(ops.sqlite.prepare("SELECT count(*) n FROM users").get()?.n).toBe(0);
+    expect(await success(await post("/ops/resources/fleet/create",{...fields,name:"Fallback fleet"}))).toBe("/ops/resources/fleet?created=1");
+    const external=await success(await post("/ops/resources/fleet/create",{...fields,return_to:"https://untrusted.example"}));expect(external).toMatch(/^\/ops\/resource\//);
+    expect(await(await request("/ops/resources/fleet?created=1")).text()).toContain("车队已新增并保存为草稿");
+  });
+  it("returns modal validation errors without writes and does not bypass CSRF or reviewer permissions",async()=>{
+    const fields={...common,name:"Modal fleet",legalName:"Modal company",return_to:"fleet-list"};
+    const invalid=await post("/ops/resources/fleet/create",{...fields,phone:"invalid phone"},origin,"application/json");expect(invalid.status).toBe(422);expect(await invalid.json()).toMatchObject({error:"INVALID_INPUT",message:expect.stringContaining("phone")});
+    const forged=await post("/ops/resources/fleet/create",fields,"https://untrusted.example","application/json");expect(forged.status).toBe(403);expect(await forged.json()).toMatchObject({error:"INVALID_CSRF"});
+    signIn("reviewer");const denied=await post("/ops/resources/fleet/create",fields,origin,"application/json");expect(denied.status).toBe(403);expect(await denied.json()).toMatchObject({error:"FORBIDDEN"});
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_resources").get()?.n).toBe(0);expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events").get()?.n).toBe(0);
+  });
   it("groups lists under their parent menus and keeps dedicated review navigation active",async()=>{
     const fleet=await create();
     const html=await(await request("/ops/resources/fleet")).text();

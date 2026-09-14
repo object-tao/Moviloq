@@ -69,5 +69,6 @@ operations.onError((error,c)=>{
   if(c.req.path.startsWith("/api/")||!c.get("view"))return c.json({error:code},status);
   const v=view(c);const message=known?publicError(code,v.lang==="zh"):t(v,["后台服务暂时不可用，请稍后重试。", "Operations is temporarily unavailable. Please retry later."]);
   const details=error instanceof ZodError?` ${error.issues.map(issue=>issue.path.join(".")).join(", ")}`:"";
+  if(c.req.path==="/ops/resources/fleet/create"&&c.req.header("Accept")==="application/json")return c.json({error:code,message:message+details},status);
   return c.html(page(v,"error",t(v,["操作未完成", "Action not completed"]),errors(v,message+details)),status);
 });
