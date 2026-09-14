@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { h, t, type View } from "./ops-view";
 
-// Only this static script's hash is authorized on the driver list. Record data
+// Only this static script's hash is authorized on driver/vehicle lists. Record data
 // arrives as escaped, authenticated server-rendered HTML, never executable JS.
-export const driverReviewScript = `(() => {
-  const dialog = document.querySelector('[data-driver-review-dialog]');
-  if (!dialog || typeof dialog.showModal !== 'function') return;
+export const resourceReviewScript = `(() => {
+  const dialog = document.querySelector('[data-resource-review-dialog]');
+  if (!dialog || !['driver', 'vehicle'].includes(dialog.dataset.resourceKind) || typeof dialog.showModal !== 'function') return;
+  const kind = dialog.dataset.resourceKind;
   const content = dialog.querySelector('[data-review-content]');
   const alert = dialog.querySelector('[data-review-error]');
   const message = alert.querySelector('p');
@@ -28,7 +29,7 @@ export const driverReviewScript = `(() => {
     controller?.abort();
     opener?.focus();
   });
-  document.querySelectorAll('[data-driver-review]').forEach(anchor => anchor.addEventListener('click', async event => {
+  document.querySelectorAll('[data-' + kind + '-review]').forEach(anchor => anchor.addEventListener('click', async event => {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const url = new URL(anchor.href);
     const id = url.pathname.split('/').pop();
@@ -51,8 +52,8 @@ export const driverReviewScript = `(() => {
       const response = await fetch(url, { credentials: 'same-origin', redirect: 'error', signal: loadController.signal });
       if (!response.ok) throw new Error('Unable to load');
       const html = new DOMParser().parseFromString(await response.text(), 'text/html');
-      const fragment = html.querySelector('[data-driver-review-fragment]');
-      if (!fragment || fragment.dataset.resourceId !== id) throw new Error('Unexpected record');
+      const fragment = html.querySelector('[data-resource-review-fragment]');
+      if (!fragment || fragment.dataset.resourceId !== id || fragment.dataset.resourceKind !== kind) throw new Error('Unexpected record');
       if (current !== generation || !dialog.open) return;
       // Linked fleet and attachment details open separately, preserving this list.
       fragment.querySelectorAll('a').forEach(link => { link.target = '_blank'; link.rel = 'noopener'; });
@@ -68,7 +69,7 @@ export const driverReviewScript = `(() => {
   content.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.target;
-    const fragment = content.querySelector('[data-driver-review-fragment]');
+    const fragment = content.querySelector('[data-resource-review-fragment]');
     const id = fragment?.dataset.resourceId;
     const action = event.submitter?.value;
     if (posting || uncertain || saved || !id || !form.reportValidity()) return;
@@ -114,21 +115,21 @@ export const driverReviewScript = `(() => {
   });
 })();`;
 
-export const driverReviewHash = `sha256-${createHash("sha256").update(driverReviewScript).digest("base64")}`;
+export const resourceReviewHash = `sha256-${createHash("sha256").update(resourceReviewScript).digest("base64")}`;
 
-export function driverReviewDialog(v: View) {
-  return `<dialog id="driver-review-dialog" class="resource-dialog review-dialog" data-driver-review-dialog aria-labelledby="driver-review-title" aria-describedby="driver-review-description"
+export function resourceReviewDialog(v: View, kind: "driver" | "vehicle") {
+  return `<dialog id="${kind}-review-dialog" class="resource-dialog review-dialog" data-resource-review-dialog data-${kind}-review-dialog data-resource-kind="${kind}" aria-labelledby="${kind}-review-title" aria-describedby="${kind}-review-description"
     data-load-error="${h(t(v,["资料加载失败，可能登录已失效。请刷新列表后重试。", "Could not load review details. Your session may have expired. Refresh the list and try again."]))}"
     data-invalid="${h(t(v,["审核未保存，请检查资料和审核权限。", "Review not saved. Check the details and your review permissions."]))}"
     data-session="${h(t(v,["登录已失效或需要修改密码，请重新验证身份。", "Your session expired or a password change is required. Authenticate again."]))}"
     data-uncertain="${h(t(v,["暂时无法确认审核保存结果。请先刷新列表核对最新状态，不要重复提交。", "The review result could not be confirmed. Refresh the list to check the latest status before submitting another decision."]))}">
-    <header class="dialog-heading"><div><h2 id="driver-review-title">${h(t(v,["司机审核", "Driver review"]))}</h2><p id="driver-review-description">${h(t(v,["在此查看资料并处理审核；关联车队及附件详情将在新标签页打开。", "View details and review here. Linked fleet and document details open in a new tab."]))}</p></div><button type="button" class="dialog-close" data-review-close aria-label="${h(t(v,["关闭弹窗", "Close dialog"]))}">×</button></header>
+    <header class="dialog-heading"><div><h2 id="${kind}-review-title">${h(t(v,kind==="driver"?["司机审核", "Driver review"]:["车辆审核", "Vehicle review"]))}</h2><p id="${kind}-review-description">${h(t(v,["在此查看资料并处理审核；关联车队及附件详情将在新标签页打开。", "View details and review here. Linked fleet and document details open in a new tab."]))}</p></div><button type="button" class="dialog-close" data-review-close aria-label="${h(t(v,["关闭弹窗", "Close dialog"]))}">×</button></header>
     <div class="dialog-error notice" data-review-error role="alert" tabindex="-1" hidden><p></p><a hidden>${h(t(v,["刷新列表 / 重新验证", "Refresh list / authenticate"]))}</a></div>
     <p class="review-loading" data-review-loading role="status">${h(t(v,["正在加载最新审核资料…", "Loading the latest review details…"]))}</p><div class="review-content" data-review-content></div>
-    </dialog><script>${driverReviewScript}</script>`;
+    </dialog><script>${resourceReviewScript}</script>`;
 }
 
-export const driverReviewCss = `
+export const resourceReviewCss = `
 .review-dialog{width:min(960px,calc(100vw - 32px))}.review-dialog>.dialog-heading{position:sticky;top:0;z-index:1}.review-content{padding:20px 26px;min-width:0}.review-content h3{font-size:18px;margin:0 0 16px;overflow-wrap:anywhere}.review-content .detail dd{overflow-wrap:anywhere}.review-loading{padding:20px 26px}.review-content .ops-form .btn{margin:4px}.review-content .notice{overflow-wrap:anywhere}
 @media(max-width:720px){.review-dialog{width:calc(100vw - 20px)}.review-content,.review-loading{padding:16px 18px}.review-content .detail{grid-template-columns:1fr}.review-content .detail dd{margin:0 0 10px}}
 `;

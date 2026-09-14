@@ -5,7 +5,7 @@ import { h, t, type View } from "./ops-view";
 // Supported lists authorize this exact hash, not arbitrary inline/self scripts.
 export const resourceDialogScript = `(() => {
   const dialog = document.querySelector('[data-resource-create-dialog]');
-  if (!dialog || !['fleet', 'driver'].includes(dialog.dataset.resourceKind)) return;
+  if (!dialog || !['fleet', 'driver', 'vehicle'].includes(dialog.dataset.resourceKind)) return;
   const kind = dialog.dataset.resourceKind;
   const listPath = '/ops/resources/' + kind;
   const opener = document.querySelector('[data-' + kind + '-create]');
@@ -92,6 +92,12 @@ export const resourceCreationLabels = {
     success: ["司机已新增并保存为草稿，操作日志已记录。", "Driver added as a draft and recorded in the audit log."],
     description: ["保存司机档案草稿，不会自动创建登录账号、通过审核或开放接单。", "Save a driver record draft. No login account, approval or live jobs are enabled automatically."],
     checkList: ["检查司机列表", "Check driver list"],
+  },
+  vehicle: {
+    add: ["新增车辆", "Add vehicle"], name: ["车辆名称", "Vehicle name"], save: ["保存车辆", "Save vehicle"],
+    success: ["车辆已新增并保存为草稿，操作日志已记录。", "Vehicle added as a draft and recorded in the audit log."],
+    description: ["保存车辆档案草稿，不会自动通过审核、绑定司机或开放接单。", "Save a vehicle record draft. No approval, driver assignment or live jobs are enabled automatically."],
+    checkList: ["检查车辆列表", "Check vehicle list"],
   },
 } as const;
 
