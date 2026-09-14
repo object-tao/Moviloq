@@ -10,7 +10,7 @@ import { configuredVehicles, publishedConfigs, quoteWithConfig } from "./public-
 import { app as publicApp } from "./index";
 import { blankBooking } from "../shared/booking";
 import { resourceDialogHash } from "./ops-resource-dialog";
-import { driverReviewHash } from "./ops-driver-review-dialog";
+import { resourceReviewHash } from "./ops-review-dialog";
 
 const origin="https://admin.moviloq.com";
 const app=createAdminApp();
@@ -37,14 +37,43 @@ async function approve(id:string){await success(await upload(id));const doc=last
 function stringData(data:Record<string,unknown>){return Object.fromEntries(Object.entries(data).map(([key,val])=>[key,typeof val==="boolean"?val?"on":"":String(val)]));}
 async function price(base:number){const location=await success(await post("/ops/configs/create",{kind:"pricing",scope:"transporter",title:`Test pricing ${base}`,...stringData({...defaultPricing("transporter"),baseNet:base}),reason:"Create test pricing"}));return location.split("/")[3].split("?")[0];}
 describe("operations preparation",()=>{
+  it("renders vehicle list creation and review dialogs with correct fields, actions and role boundaries",async()=>{
+    const fleet=await create();const vehicle=await create("vehicle",{fleet_id:fleet});
+    const response=await request("/ops/resources/vehicle");const html=await response.text();
+    for(const item of ['id="vehicle-create-dialog"','id="vehicle-review-dialog"','data-vehicle-review aria-haspopup="dialog"','name="return_to" value="vehicle-list"','name="registration"','name="vehicleClass"','name="capacityKg"','name="lengthCm"','name="widthCm"','name="heightCm"',`value="${fleet}"`,"新增车辆","保存车辆","审核编辑"])expect(html).toContain(item);
+    expect(html).toContain(`href="/ops/resource/${vehicle}">编辑`);expect(html).not.toContain('name="driver_id"');
+    for(const hash of [resourceDialogHash,resourceReviewHash])expect(response.headers.get("Content-Security-Policy")).toContain(hash);
+    expect(response.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
+    signIn("operations");const operator=await(await request("/ops/resources/vehicle")).text();expect(operator).toContain('id="vehicle-create-dialog"');expect(operator).toContain(">查看审核</a>");expect(operator).not.toContain(">审核编辑</a>");
+    signIn("reviewer");const reviewer=await(await request("/ops/resources/vehicle")).text();expect(reviewer).not.toContain('id="vehicle-create-dialog"');expect(reviewer).toContain('id="vehicle-review-dialog"');expect(reviewer).toContain(">审核编辑</a>");expect(reviewer).not.toContain(">编辑</a>");
+    jar.clear();expect((await request("/ops/resources/vehicle")).headers.get("location")).toBe("/login");
+  });
+  it("creates an audited vehicle draft with dimensions and fleet while rejecting invalid or duplicate modal records",async()=>{
+    const fleet=await create();const driver=await create("driver");
+    const data={...common,name:"Modal vehicle",fleet_id:fleet,vehicleClass:"transporter",registration:"F QA 123",country:"DE",capacityKg:"1000",lengthCm:"320",widthCm:"140",heightCm:"180",equipment:"Tail lift",return_to:"vehicle-list"};
+    const invalidCases:Record<string,string>[]=[{capacityKg:"0"},{capacityKg:"44001"},{lengthCm:""},{widthCm:"401"},{heightCm:"501"},{registration:""},{country:"XX"},{fleet_id:"missing-fleet"},{fleet_id:driver}];
+    for(const extra of invalidCases){const response=await post("/ops/resources/vehicle/create",{...data,...extra},origin,"application/json");expect([422,404]).toContain(response.status);expect(await response.json()).toHaveProperty("message");}
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_resources WHERE kind='vehicle'").get()?.n).toBe(0);
+    const response=await post("/ops/resources/vehicle/create",data,origin,"application/json");expect(response.status).toBe(201);expect(await response.json()).toEqual({redirect:"/ops/resources/vehicle?created=1"});
+    const vehicle=ops.sqlite.prepare("SELECT * FROM ops_resources WHERE kind='vehicle'").get() as ResourceRow;
+    expect(vehicle).toMatchObject({status:"draft",fleet_id:fleet,driver_id:null,registration:"DE:FQA123",version:1});expect(JSON.parse(vehicle.data_json)).toMatchObject({vehicleClass:"transporter",capacityKg:1000,lengthCm:320,widthCm:140,heightCm:180,equipment:"Tail lift"});
+    const before=ops.sqlite.prepare("SELECT count(*) n FROM ops_events").get()?.n;
+    const duplicate=await post("/ops/resources/vehicle/create",{...data,name:"Duplicate vehicle",registration:"f qa123"},origin,"application/json");expect(duplicate.status).toBe(409);expect(await duplicate.json()).toHaveProperty("message");expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events").get()?.n).toBe(before);
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM users").get()?.n).toBe(0);
+    signIn("reviewer");expect((await post("/ops/resources/vehicle/create",data,origin,"application/json")).status).toBe(403);
+    signIn("owner");expect((await post("/ops/resources/vehicle/create",data,"https://untrusted.example","application/json")).status).toBe(403);
+    expect(await success(await post("/ops/resources/vehicle/create",{...data,registration:"F QA 124"}))).toBe("/ops/resources/vehicle?created=1");
+    const fallback=await success(await post("/ops/resources/vehicle/create",{...data,registration:"F QA 125",return_to:"https://untrusted.example"}));expect(fallback).toMatch(/^\/ops\/resource\//);
+    expect(await(await request("/ops/resources/vehicle?created=1")).text()).toContain("车辆已新增并保存为草稿");
+  });
   it("renders driver creation and review dialogs with scoped scripts and role-specific actions",async()=>{
     const fleet=await create();const driver=await create("driver",{fleet_id:fleet});
     const response=await request("/ops/resources/driver");const html=await response.text();
     for(const item of ['id="driver-create-dialog"','id="driver-review-dialog"','data-driver-review aria-haspopup="dialog"','name="return_to" value="driver-list"','name="vehicleClasses"',`value="${fleet}"`,"新增司机","审核编辑"])expect(html).toContain(item);
     expect(html).toContain(`href="/ops/resource/${driver}">编辑`);
-    for(const hash of [resourceDialogHash,driverReviewHash])expect(response.headers.get("Content-Security-Policy")).toContain(hash);
+    for(const hash of [resourceDialogHash,resourceReviewHash])expect(response.headers.get("Content-Security-Policy")).toContain(hash);
     expect(response.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
-    expect((await request("/ops/resources/fleet")).headers.get("Content-Security-Policy")).not.toContain(driverReviewHash);
+    expect((await request("/ops/resources/fleet")).headers.get("Content-Security-Policy")).not.toContain(resourceReviewHash);
     signIn("operations");const operator=await(await request("/ops/resources/driver")).text();expect(operator).toContain("新增司机");expect(operator).toContain(">查看审核</a>");expect(operator).not.toContain(">审核编辑</a>");
     signIn("reviewer");const reviewer=await(await request("/ops/resources/driver")).text();expect(reviewer).not.toContain('id="driver-create-dialog"');expect(reviewer).toContain('id="driver-review-dialog"');expect(reviewer).toContain(">审核编辑</a>");
   });
@@ -62,18 +91,19 @@ describe("operations preparation",()=>{
     signIn("reviewer");expect((await post("/ops/resources/driver/create",data,origin,"application/json")).status).toBe(403);
     signIn("owner");expect((await post("/ops/resources/driver/create",data,"https://untrusted.example","application/json")).status).toBe(403);
   });
-  it("serves authenticated driver-only escaped review fragments with unchanged permissions",async()=>{
-    const fleet=await create();const id=await create("driver",{name:'Driver <script>alert("x")</script>'});
+  it.each(["driver","vehicle"])("serves authenticated escaped %s review fragments with unchanged permissions",async kind=>{
+    const fleet=await create();const id=await create(kind,{name:'Record <script>alert("x")</script>'});
     await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit fixture"}));
     const path=`/ops/reviews/resource/${id}?dialog=1`;const response=await request(path);const html=await response.text();
     expect(html).toContain(`data-resource-id="${id}"`);expect(html).toContain("&lt;script&gt;");expect(html).not.toContain("<script>");expect(html).not.toContain("<html");expect(html).not.toContain("<nav");expect(html).not.toContain(`action="/ops/resource/${id}/save"`);expect(html).toContain('value="approve"');
+    expect(html).toContain(`data-resource-kind="${kind}"`);expect(html).toContain(`id="${kind}-review-reason"`);expect(html).not.toContain('id="reason"');
     expect(response.headers.get("Cache-Control")).toContain("no-store");expect((await request(`/ops/reviews/resource/${fleet}?dialog=1`)).status).toBe(422);
     signIn("operations");expect(await(await request(path)).text()).not.toContain('value="approve"');
     signIn("reviewer");expect(await(await request(path)).text()).toContain('value="approve"');
     jar.clear();expect((await request(path)).headers.get("location")).toBe("/login");
   });
-  it("validates AJAX driver decisions, preserves versions and audit, and allows reviewed evidence approval",async()=>{
-    const id=await create("driver");await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit driver"}));
+  it.each(["driver","vehicle"])("validates AJAX %s decisions, preserves versions and audit, and allows reviewed evidence approval",async kind=>{
+    const id=await create(kind);await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit fixture"}));
     const path=`/ops/reviews/resource/${id}/status`;const data={version:version(id),action:"approve",reason:"Driver review"};
     const early=await post(path,data,origin,"application/json");expect(early.status).toBe(422);expect(await early.json()).toMatchObject({error:"REVIEW_NOT_READY",message:expect.any(String)});
     signIn("operations");expect((await post(path,{...data,action:"reject"},origin,"application/json")).status).toBe(403);
@@ -83,7 +113,7 @@ describe("operations preparation",()=>{
     const needs=await post(path,{...data,action:"needs_info"},origin,"application/json");expect(needs.status).toBe(200);expect(await needs.json()).toEqual({saved:true,id});expect(row(id).status).toBe("needs_info");
     expect((await post(path,{...data,action:"needs_info"},origin,"application/json")).status).toBe(409);
     expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE action='resource.needs_info'").get()?.n).toBe(1);
-    signIn("owner");await policy("driver");await success(await upload(id));const doc=lastDoc(id);await success(await post(`/ops/document/${doc.id}/review`,{version:String(doc.version),action:"approved",reason:"Evidence checked"}));
+    signIn("owner");await policy(kind==="driver"?"driver":"vehicle:transporter");await success(await upload(id));const doc=lastDoc(id);await success(await post(`/ops/document/${doc.id}/review`,{version:String(doc.version),action:"approved",reason:"Evidence checked"}));
     expect(row(id).status).toBe("submitted");
     const approved=await post(path,{...data,version:version(id)},origin,"application/json");expect(approved.status).toBe(200);expect(await approved.json()).toEqual({saved:true,id});expect(row(id).status).toBe("approved");
     for(const [action,status]of [["suspend","suspended"],["restore","submitted"],["reject","rejected"]]){

@@ -8,7 +8,7 @@ import { adminCss, loginHtml, passwordHtml, readyHtml, unavailableHtml } from ".
 import { operations } from "./admin-ops";
 import { opsCss, opsNavigationCss } from "./ops-view";
 import { resourceDialogHash, resourceDialogCss } from "./ops-resource-dialog";
-import { driverReviewHash, driverReviewCss } from "./ops-driver-review-dialog";
+import { resourceReviewHash, resourceReviewCss } from "./ops-review-dialog";
 import { permissionsFor, roles, type Role } from "../shared/operations";
 
 export type AdminBindings = { ENVIRONMENT: string; ADMIN_HOSTNAME: string; ADMIN_DB?: D1Database; OPS_DB?: D1Database; ADMIN_AUTH_SECRET?: string };
@@ -30,7 +30,7 @@ export function createAdminApp() {
   const app = new Hono<AdminEnv>();
   app.use("*", (c,next)=>secureHeaders({ referrerPolicy: "same-origin", contentSecurityPolicy: {
     defaultSrc: ["'none'"], styleSrc: ["'self'"], imgSrc: ["'self'"], baseUri: ["'none'"], frameAncestors: ["'none'"], formAction: ["'self'"],
-    ...(c.req.method==="GET"&&["/ops/resources/fleet","/ops/resources/driver"].includes(c.req.path) ? { scriptSrc: [`'${resourceDialogHash}'`,...(c.req.path==="/ops/resources/driver"?[`'${driverReviewHash}'`]:[])], connectSrc: ["'self'"] } : {})
+    ...(c.req.method==="GET"&&["/ops/resources/fleet","/ops/resources/driver","/ops/resources/vehicle"].includes(c.req.path) ? { scriptSrc: [`'${resourceDialogHash}'`,...(c.req.path!=="/ops/resources/fleet"?[`'${resourceReviewHash}'`]:[])], connectSrc: ["'self'"] } : {})
   } })(c,next));
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store"); c.header("X-Robots-Tag", "noindex, nofollow, noarchive");
@@ -42,7 +42,7 @@ export function createAdminApp() {
   });
   app.use("*", (c,next) => bodyLimit({ maxSize: /^\/ops\/resource\/[^/]+\/document$/.test(c.req.path) ? 600 * 1024 : c.req.path.startsWith("/ops/") ? 128 * 1024 : 8192, onError: c => c.json({ error: "REQUEST_TOO_LARGE" }, 413) })(c,next));
   app.get("/admin.css", c => c.body(adminCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
-  app.get("/ops.css", c => c.body(opsCss + opsNavigationCss + resourceDialogCss + driverReviewCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
+  app.get("/ops.css", c => c.body(opsCss + opsNavigationCss + resourceDialogCss + resourceReviewCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
   app.get("/robots.txt", c => c.text("User-agent: *\nDisallow: /\n"));
   app.get("/favicon.ico", c => c.body(null, 204));
   app.get("/api/health", c => c.json({ service: "moviloq-admin", authentication: "password", configured: !!c.env.ADMIN_DB && /^[a-f0-9]{64}$/.test(c.env.ADMIN_AUTH_SECRET ?? ""), businessDataConnected: !!c.env.OPS_DB, businessOperationsEnabled: !!c.env.OPS_DB, liveOrdersEnabled: false, paymentsEnabled: false, release: "operations-phase-one" }));
