@@ -69,6 +69,47 @@ try {
   state=page.locator('form[action$="/status"]');await state.locator('[name="reason"]').fill("All required checks passed");await state.getByRole("button",{name:"Approve",exact:true}).click();await page.waitForURL(/saved=1$/);assert(await page.getByText("Records ready",{exact:true}).isVisible());
   await page.screenshot({path:join(destination,"operations-fleet-reviewed.png"),fullPage:true});
   assert.equal((await db.prepare("SELECT status FROM ops_resources WHERE id=?").bind(fleetId).first()).status,"approved");
+  // Driver creation and review both stay on the list; edits keep their existing page.
+  await page.goto(origin+'/ops/resources/driver');await page.locator('[data-driver-create]').click();
+  const driverCreate=page.locator('#driver-create-dialog');
+  for(const [key,value]of Object.entries({name:'Synthetic Frankfurt Driver',source:'Authorized synthetic driver fixture',reason:'Create driver modal fixture'}))await driverCreate.locator(`[name="${key}"]`).fill(value);
+  await driverCreate.locator('[name="fleet_id"]').selectOption(fleetId);await driverCreate.locator('[name="authorized"]').check();
+  await driverCreate.locator('[name="vehicleClasses"][value="transporter"]').uncheck();
+  const invalidDriver=page.waitForResponse(response=>response.url()===origin+'/ops/resources/driver/create'&&response.status()===422);
+  await driverCreate.getByRole('button',{name:'Save driver',exact:true}).click();await invalidDriver;await driverCreate.getByRole('alert').waitFor();assert.equal(await driverCreate.locator('[name="name"]').inputValue(),'Synthetic Frankfurt Driver');
+  await driverCreate.locator('[name="vehicleClasses"][value="transporter"]').check();await driverCreate.locator('[name="vehicleClasses"][value="caddy"]').check();
+  const savedDriver=page.waitForResponse(response=>response.url()===origin+'/ops/resources/driver/create'&&response.status()===201);
+  await driverCreate.locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});await savedDriver;await page.waitForURL('**/ops/resources/driver?created=1');
+  const driverRecord=await db.prepare("SELECT id,status,data_json,fleet_id FROM ops_resources WHERE kind='driver'").first();const driverId=driverRecord.id;
+  assert.equal(driverRecord.status,'draft');assert.equal(driverRecord.fleet_id,fleetId);assert.deepEqual(JSON.parse(driverRecord.data_json).vehicleClasses,['caddy','transporter']);assert.equal((await db.prepare("SELECT count(*) n FROM ops_events WHERE resource_id=? AND action='resource.created'").bind(driverId).first()).n,1);
+  await page.locator('.driver-table .row-actions').getByRole('link',{name:'Edit',exact:true}).click();await page.waitForURL(origin+`/ops/resource/${driverId}`);
+  const driverState=page.locator('form[action$="/status"]');await driverState.locator('[name="reason"]').fill('Submit synthetic driver');await driverState.getByRole('button',{name:'Submit for review',exact:true}).click();await page.waitForURL(/saved=1$/);
+  const driverListUrl=origin+'/ops/resources/driver?q=Synthetic&status=submitted';await page.goto(driverListUrl);
+  const reviewOpener=page.locator('[data-driver-review]');const reviewModal=page.locator('#driver-review-dialog');
+  await reviewOpener.click();await reviewModal.locator('[data-driver-review-fragment]').waitFor();assert.equal(page.url(),driverListUrl);assert(await reviewModal.getByRole('heading',{name:'Synthetic Frankfurt Driver',exact:true}).isVisible());
+  await page.keyboard.press('Escape');assert(!(await reviewModal.isVisible()));assert(await reviewOpener.evaluate(element=>element===document.activeElement));
+  await reviewOpener.click();await reviewModal.locator('form').waitFor();
+  // Labels must focus this form, not the hidden creation dialog's reason input.
+  await reviewModal.locator('label[for="driver-review-reason"]').click();assert.equal(await page.locator(':focus').getAttribute('id'),'driver-review-reason');
+  for(const [size,width,height]of [['desktop',1440,1000],['mobile',390,844],['narrow',320,720]]){
+    await page.setViewportSize({width,height});await reviewModal.locator('form').scrollIntoViewIfNeeded();assert(await reviewModal.evaluate(element=>element.scrollWidth<=element.clientWidth));await page.screenshot({path:join(destination,`driver-review-actions-${size}.png`)});
+  }
+  await page.setViewportSize({width:1440,height:1000});
+  await reviewModal.locator('[name="reason"]').fill('Preserve reason when documents are missing');
+  const invalidReview=page.waitForResponse(response=>response.url()===origin+`/ops/reviews/resource/${driverId}/status`&&response.status()===422);
+  await reviewModal.getByRole('button',{name:'Approve',exact:true}).click();await invalidReview;await reviewModal.getByRole('alert').waitFor();assert.equal(await reviewModal.locator('[name="reason"]').inputValue(),'Preserve reason when documents are missing');assert.equal(page.url(),driverListUrl);
+  await page.screenshot({path:join(destination,'driver-review-validation.png'),fullPage:true});
+  // Optimistic concurrency: another decision must not be overwritten by an old modal.
+  const staleVersion=await reviewModal.locator('[name="version"]').inputValue();const reviewCsrf=await reviewModal.locator('[name="csrf"]').inputValue();
+  const elsewhere=await context.request.post(origin+`/ops/reviews/resource/${driverId}/status`,{headers:{Origin:origin,Accept:'application/json'},form:{csrf:reviewCsrf,version:staleVersion,action:'needs_info',reason:'Synthetic concurrent reviewer'}});assert.equal(elsewhere.status(),200);
+  const staleReview=page.waitForResponse(response=>response.url()===origin+`/ops/reviews/resource/${driverId}/status`&&response.status()===409);
+  await reviewModal.getByRole('button',{name:'Reject',exact:true}).click();await staleReview;assert.equal(await reviewModal.locator('[name="reason"]').inputValue(),'Preserve reason when documents are missing');
+  await page.goto(origin+`/ops/resource/${driverId}`);await page.locator('form[action$="/status"] [name="reason"]').fill('Resubmit corrected driver');await page.getByRole('button',{name:'Submit for review',exact:true}).click();await page.waitForURL(/saved=1$/);
+  await page.goto(driverListUrl);await page.locator('[data-driver-review]').click();await reviewModal.locator('form').waitFor();await reviewModal.locator('[name="reason"]').fill('Return for missing evidence');
+  const reviewedDriver=page.waitForResponse(response=>response.url()===origin+`/ops/reviews/resource/${driverId}/status`&&response.status()===200);
+  const reloadedDriver=page.waitForResponse(response=>response.url()===driverListUrl&&response.request().isNavigationRequest());
+  await reviewModal.locator('form').evaluate(form=>{const button=form.querySelector('[value="needs_info"]');form.requestSubmit(button);form.requestSubmit(button);});await reviewedDriver;await reloadedDriver;await page.waitForLoadState();
+  assert.equal(page.url(),driverListUrl);assert(!(await reviewModal.isVisible()));assert.equal((await db.prepare('SELECT status FROM ops_resources WHERE id=?').bind(driverId).first()).status,'needs_info');assert.equal((await db.prepare("SELECT count(*) n FROM ops_events WHERE resource_id=? AND action='resource.needs_info'").bind(driverId).first()).n,2);
   // Configuration simulation and publishing are tested through their real HTML forms.
   await page.goto(origin+"/ops/configs/new?kind=pricing&scope=transporter");await page.locator('[name="title"]').fill("Synthetic test estimate rule");await page.locator('[name="baseNet"]').fill("40");await page.locator('[name="reason"]').fill("Preview calculation fixture");await page.getByRole("button",{name:"Save draft",exact:true}).click();await page.waitForURL(/saved=1$/);const priceId=new URL(page.url()).pathname.split("/")[3];
   await page.locator('form[action$="/simulate"]').getByRole("button",{name:"Simulate (no payment)"}).click();await page.waitForURL(/\/simulate$/);assert(await page.getByRole("status").getByText("EUR",{exact:false}).isVisible());
@@ -85,6 +126,10 @@ try {
         await page.screenshot({path:join(destination,`fleet-create-dialog-${name}.png`),fullPage:true});await modal.locator('[data-dialog-close]').first().click();assert(!(await modal.isVisible()));
         const row=page.locator('.fleet-table tbody tr').first();await row.locator('.row-actions a').last().click();await page.waitForURL(/\/ops\/reviews\/resource\//);assert.equal(await page.locator('nav [aria-current="page"]').getAttribute('href'),'/ops/reviews/fleet');
       }
+      if(section==='drivers'){
+        await page.locator('[data-driver-create]').click();const createModal=page.locator('#driver-create-dialog');assert(await createModal.isVisible());assert(await createModal.evaluate(element=>element.scrollWidth<=element.clientWidth));await page.screenshot({path:join(destination,`driver-create-dialog-${name}.png`)});await createModal.locator('[data-dialog-close]').first().click();
+        await page.locator('[data-driver-review]').click();await reviewModal.locator('[data-driver-review-fragment]').waitFor();assert.equal(new URL(page.url()).pathname,'/ops/resources/driver');assert(await reviewModal.evaluate(element=>element.scrollWidth<=element.clientWidth));assert(await reviewModal.evaluate(element=>{const rect=element.getBoundingClientRect();return rect.top>=0&&rect.bottom<=window.innerHeight;}));assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));await page.screenshot({path:join(destination,`driver-review-dialog-${name}.png`)});await reviewModal.locator('[data-review-close]').click();assert(!(await reviewModal.isVisible()));
+      }
     }
   }
   // An interrupted response must not silently retry or allow a duplicate save.
@@ -97,8 +142,16 @@ try {
   assert(await interruptedDialog.getByRole('link',{name:'Check fleet list',exact:true}).isVisible());assert(await interruptedDialog.getByRole('button',{name:'Save fleet',exact:true}).isDisabled());
   await interruptedDialog.locator('form').evaluate(form=>form.requestSubmit());assert.equal(interruptedRequests,1);assert.equal((await db.prepare('SELECT count(*) n FROM ops_resources').first()).n,beforeInterrupted);
   await page.unroute('**/ops/resources/fleet/create');await page.goto(origin+'/ops/resources/fleet');
+  // Review network failure also locks retries, including closing and reopening.
+  await page.goto(origin+`/ops/resource/${driverId}`);await page.locator('form[action$="/status"] [name="reason"]').fill('Submit network failure fixture');await page.getByRole('button',{name:'Submit for review',exact:true}).click();await page.waitForURL(/saved=1$/);
+  await page.goto(origin+'/ops/resources/driver');await page.locator('[data-driver-review]').click();await reviewModal.locator('form').waitFor();await reviewModal.locator('[name="reason"]').fill('Do not retry interrupted review');
+  let interruptedReviews=0;await page.route(`**/ops/reviews/resource/${driverId}/status`,async route=>{interruptedReviews++;await route.abort('failed');});
+  await reviewModal.getByRole('button',{name:'Reject',exact:true}).click();await reviewModal.getByRole('alert').waitFor();assert(await reviewModal.getByRole('button',{name:'Reject',exact:true}).isDisabled());
+  await reviewModal.locator('[data-review-close]').click();await page.locator('[data-driver-review]').click();await reviewModal.getByRole('alert').waitFor();assert.equal(await reviewModal.locator('form').count(),0);assert.equal(interruptedReviews,1);assert.equal((await db.prepare('SELECT status FROM ops_resources WHERE id=?').bind(driverId).first()).status,'submitted');await page.unroute(`**/ops/reviews/resource/${driverId}/status`);
   // The same entry remains usable without JavaScript.
-  const noScript=await browser.newContext({javaScriptEnabled:false,storageState:await context.storageState()});const fallbackPage=await noScript.newPage();await fallbackPage.goto(origin+'/ops/resources/fleet');await fallbackPage.getByRole('link',{name:'Add fleet',exact:true}).click();await fallbackPage.waitForURL('**/ops/resources/fleet/new');assert(await fallbackPage.locator('form[action="/ops/resources/fleet/create"]').isVisible());await noScript.close();
+  const noScript=await browser.newContext({javaScriptEnabled:false,storageState:await context.storageState()});const fallbackPage=await noScript.newPage();
+  for(const kind of ['fleet','driver']){await fallbackPage.goto(origin+`/ops/resources/${kind}`);await fallbackPage.locator(`[data-${kind}-create]`).click();await fallbackPage.waitForURL(`**/ops/resources/${kind}/new`);assert(await fallbackPage.locator(`form[action="/ops/resources/${kind}/create"]`).isVisible());}
+  await fallbackPage.goto(origin+'/ops/resources/driver');await fallbackPage.locator('[data-driver-review]').click();await fallbackPage.waitForURL(origin+`/ops/reviews/resource/${driverId}`);assert(await fallbackPage.locator('form[action$="/status"]').isVisible());await noScript.close();
   // Exercise staff mutations and role revocation in real D1, not just the SQLite shim.
   const staffHtml=await(await context.request.get(origin+"/ops/staff")).text();const ownerCsrf=/name="csrf" value="([a-f0-9]{64})"/.exec(staffHtml)[1];
   const staffPassword=randomBytes(24).toString("base64url");const staffReplacement=randomBytes(24).toString("base64url");
@@ -108,6 +161,7 @@ try {
   assert.deepEqual((await(await reviewerContext.request.get(origin+"/api/admin/session")).json()).permissions,["admin:password:change"]);
   await reviewerPage.locator("#current").fill(staffPassword);await reviewerPage.locator("#password").fill(staffReplacement);await reviewerPage.locator("#confirmation").fill(staffReplacement);await reviewerPage.getByRole("button",{name:"保存新密码 / Save password"}).click();await reviewerPage.waitForURL("**/login?changed=1");await reviewerPage.locator("#username").fill("reviewer@example.test");await reviewerPage.locator("#password").fill(staffReplacement);await reviewerPage.getByRole("button",{name:"登录 / Sign in"}).click();await reviewerPage.waitForURL(origin+"/");
   assert.equal((await reviewerContext.request.get(origin+"/ops/configs")).status(),403);assert.equal((await reviewerContext.request.get(origin+"/ops/staff")).status(),403);assert.equal((await reviewerContext.request.get(origin+"/api/admin/overview")).status(),200);
+  await reviewerPage.goto(origin+'/ops/resources/driver');assert.equal(await reviewerPage.locator('[data-driver-create]').count(),0);await reviewerPage.locator('[data-driver-review]').click();await reviewerPage.locator('#driver-review-dialog form').waitFor();assert.equal(await reviewerPage.locator('#driver-review-dialog [value="approve"]').count(),1);assert.equal(new URL(reviewerPage.url()).pathname,'/ops/resources/driver');
   const currentStaff=await auth.prepare("SELECT credential_version FROM admin_users WHERE id=?").bind(staff.id).first();const disabled=await context.request.post(origin+`/ops/staff/${staff.id}/update`,{maxRedirects:0,headers:{Origin:origin},form:{csrf:ownerCsrf,version:String(currentStaff.credential_version),role:"reviewer",status:"disabled",reason:"Revoke synthetic reviewer"}});assert.equal(disabled.status(),303);
   assert.equal((await reviewerContext.request.get(origin+"/api/admin/overview")).status(),401);assert.equal((await auth.prepare("SELECT count(*) n FROM admin_staff_events WHERE target_id=?").bind(staff.id).first()).n,2);await reviewerContext.close();
   assert.equal((await context.request.get(origin+"/api/admin/orders")).status(),403);assert.equal((await context.request.get(origin+"/api/admin/payments")).status(),403);
@@ -115,5 +169,5 @@ try {
   const documentId=(await db.prepare("SELECT id FROM ops_documents LIMIT 1").first()).id;
   const anonymous=await browser.newContext();assert.equal((await anonymous.request.get(origin+`/ops/document/${documentId}/file`,{maxRedirects:0})).status(),303);assert.equal((await anonymous.request.get(origin+"/api/admin/overview")).status(),401);await anonymous.close();
   assert.deepEqual(errors,[]);assert((await db.prepare("SELECT count(*) n FROM ops_events").first()).n>=8);
-  await context.close();console.log("Verified isolated workerd/D1: real operations forms, private document upload/read/review, fleet approval, price simulation/publication, staff creation/forced change/RBAC/revocation, bilingual 1440/390/320px layouts, CSRF and anonymous denial. No production data or credentials used.");
+  await context.close();console.log("Verified isolated workerd/D1: fleet and driver creation dialogs, driver review dialog validation/concurrency/save/retry protection, private document upload/read/review, fleet approval, price simulation/publication, staff creation/forced change/RBAC/revocation, bilingual 1440/390/320px layouts, CSRF and anonymous denial. No production data or credentials used.");
 } finally {if(browser)await browser.close();await mf.dispose();}
