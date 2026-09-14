@@ -37,6 +37,52 @@ async function approve(id:string){await success(await upload(id));const doc=last
 function stringData(data:Record<string,unknown>){return Object.fromEntries(Object.entries(data).map(([key,val])=>[key,typeof val==="boolean"?val?"on":"":String(val)]));}
 async function price(base:number){const location=await success(await post("/ops/configs/create",{kind:"pricing",scope:"transporter",title:`Test pricing ${base}`,...stringData({...defaultPricing("transporter"),baseNet:base}),reason:"Create test pricing"}));return location.split("/")[3].split("?")[0];}
 describe("operations preparation",()=>{
+  it("explains missing policy on HTML and JSON review failures without mutating records",async()=>{
+    const id=await create("fleet",{name:'Missing policy <img src=x onerror=alert(1)>'});await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit fixture"}));
+    const data={version:version(id),action:"approve",reason:"Check prerequisites"};const endpoint=`/ops/reviews/resource/${id}/status`;const before=await revision(ops.db);
+    const response=await post(endpoint,data,origin,"application/json");expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({error:"REVIEW_NOT_READY",issues:[{code:"policy_missing",detail:expect.stringContaining("当前附件 0 份"),actions:expect.arrayContaining([{href:"/ops/configs?kind=requirements&scope=fleet",label:expect.any(String)},{href:`/ops/resource/${id}#documents`,label:expect.any(String)}])}]});
+    const html=await(await post(endpoint,data)).text();expect(html).toContain("尚未满足审核条件");expect(html).toContain('data-issue-code="policy_missing"');expect(html).toContain("&lt;img");expect(html).not.toContain('<img src=x');expect(html).toContain("返回档案审核 / 刷新检查");
+    expect(await revision(ops.db)).toBe(before);expect(row(id).status).toBe("submitted");
+    const review=await(await request(`/ops/reviews/resource/${id}`)).text();expect(review).toContain('data-issue-code="policy_missing"');expect(review).not.toContain('data-issue-code="review_required"');
+    signIn("reviewer");const limited=await(await post(endpoint,data,origin,"application/json")).json() as {issues:{actions:{href:string}[];detail:string}[]};expect(limited.issues[0].detail).toContain("请联系管理员");expect(limited.issues.flatMap(item=>item.actions).some(action=>action.href.startsWith("/ops/config"))).toBe(false);
+    signIn("operations");const forbidden=await post(endpoint,data,origin,"application/json");expect(forbidden.status).toBe(403);expect(await forbidden.json()).not.toHaveProperty("issues");
+  });
+  it("distinguishes missing, pending, corrected and expired latest documents with exact handling links",async()=>{
+    const id=await create("driver");await policy("driver");await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit fixture"}));
+    const check=async()=>await(await post(`/ops/reviews/resource/${id}/status`,{version:version(id),action:"approve",reason:"Review documents"},origin,"application/json")).json() as {issues:{code:string;message:string;detail:string;actions:{href:string;label:string}[]}[]};
+    expect((await check()).issues).toMatchObject([{code:"document_missing",message:expect.stringContaining("其他资料"),actions:[{href:`/ops/resource/${id}#documents`}]}]);
+    await success(await upload(id));let doc=lastDoc(id);
+    expect((await check()).issues).toMatchObject([{code:"document_pending",actions:[{href:`/ops/document/${doc.id}`}]}]);
+    await success(await post(`/ops/document/${doc.id}/review`,{version:String(doc.version),action:"needs_info",reason:"Missing page"}));
+    expect((await check()).issues).toMatchObject([{code:"document_correction",message:expect.stringContaining("待补件"),actions:expect.arrayContaining([{href:`/ops/resource/${id}#documents`,label:expect.any(String)}])}]);
+    await success(await upload(id));doc=lastDoc(id);await success(await post(`/ops/document/${doc.id}/review`,{version:String(doc.version),action:"approved",reason:"Evidence checked"}));
+    ops.sqlite.prepare("UPDATE ops_documents SET expires_on='2000-01-01' WHERE id=?").run(doc.id);
+    expect((await check()).issues).toMatchObject([{code:"document_expired",detail:expect.stringContaining("2000-01-01"),actions:[{href:`/ops/resource/${id}#documents`}]}]);
+    await success(await upload(id));const current=lastDoc(id);const sequence=ops.sqlite.prepare("SELECT sequence FROM ops_documents WHERE id=?").get(current.id)?.sequence;const pending=await check();expect(pending.issues).toMatchObject([{code:"document_pending",detail:expect.stringContaining(`第 ${sequence} 版`),actions:[{href:`/ops/document/${current.id}`}]}]);expect(JSON.stringify(pending)).not.toContain(doc.id);
+    expect((await request(`/ops/resource/${id}`)).status).toBe(200);
+  });
+  it("only explains authorization on a blocked submission and links fleet and driver blockers",async()=>{
+    const fleet=await create("fleet",{authorized:""});const submission=await post(`/ops/resource/${fleet}/status`,{version:version(fleet),action:"submit",reason:"Missing authorization"},origin,"application/json");expect(submission.status).toBe(422);expect(await submission.json()).toMatchObject({issues:[{code:"authorization_missing",actions:[{href:`/ops/resource/${fleet}#authorized`}]}]});expect(row(fleet).status).toBe("draft");
+    const driver=await create("driver",{fleet_id:fleet});const vehicle=await create("vehicle",{fleet_id:fleet});
+    // Synthetic database setup for a previously paired driver becoming ineligible.
+    ops.sqlite.prepare("UPDATE ops_resources SET driver_id=?,status='submitted' WHERE id=?").run(driver,vehicle);
+    const response=await post(`/ops/reviews/resource/${vehicle}/status`,{version:version(vehicle),action:"approve",reason:"Resolve associated records"},origin,"application/json");const body=await response.json() as {issues:{code:string;actions:{href:string}[]}[]};
+    expect(body.issues).toEqual(expect.arrayContaining([expect.objectContaining({code:"fleet_not_ready",actions:expect.arrayContaining([expect.objectContaining({href:`/ops/reviews/resource/${fleet}`})])}),expect.objectContaining({code:"driver_not_ready",actions:expect.arrayContaining([expect.objectContaining({href:`/ops/reviews/resource/${driver}`}),expect.objectContaining({href:`/ops/resource/${vehicle}#pairing`})])})]));
+    const html=await(await request(`/ops/resource/${vehicle}`)).text();for(const anchor of ["submission","documents","pairing"])expect(html).toContain(`id="${anchor}"`);
+  });
+  it("filters checklist links to the right scope, preserves draft/scheduled rows, and prefills creation",async()=>{
+    const make=async(scope:string)=>{const location=await success(await post("/ops/configs/create",{kind:"requirements",scope,title:`Checklist ${scope}`,requiredDocuments:["other"],locallyConfirmed:"on",reason:"Prepare draft checklist"}));return location.split("/")[3].split("?")[0];};
+    const fleet=await make("fleet");const vehicle=await make("vehicle:transporter");await make("driver");
+    const filtered=await(await request("/ops/configs?kind=requirements&scope=vehicle%3Atransporter")).text();expect(filtered).toContain(`href="/ops/config/${vehicle}"`);expect(filtered).not.toContain(`href="/ops/config/${fleet}"`);expect(filtered).toContain('href="/ops/configs/new?kind=requirements&amp;scope=vehicle%3Atransporter"');
+    const id=await create("vehicle");await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit fixture"}));
+    const check=async()=>await(await post(`/ops/reviews/resource/${id}/status`,{version:version(id),action:"approve",reason:"Policy must be active"},origin,"application/json")).json();
+    expect(await check()).toMatchObject({issues:[{code:"policy_missing"}]});
+    await success(await post(`/ops/config/${vehicle}/publish`,{version:"1",effective_at:new Date(Date.now()+86400000).toISOString().slice(0,16),reason:"Schedule checklist"}));expect(await check()).toMatchObject({issues:[{code:"policy_missing"}]});
+    expect(await(await request("/ops/configs?kind=requirements&scope=vehicle%3Atransporter")).text()).toContain("等待生效");
+    expect((await request("/ops/configs?kind=requirements&scope=invalid")).status).toBe(422);
+    signIn("reviewer");expect((await request("/ops/configs?kind=requirements&scope=fleet")).status).toBe(403);
+  });
   it("renders vehicle list creation and review dialogs with correct fields, actions and role boundaries",async()=>{
     const fleet=await create();const vehicle=await create("vehicle",{fleet_id:fleet});
     const response=await request("/ops/resources/vehicle");const html=await response.text();
