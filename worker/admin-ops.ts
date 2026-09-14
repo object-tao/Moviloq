@@ -8,6 +8,7 @@ import { documentRoutes } from "./ops-documents";
 import { configRoutes } from "./ops-configs";
 import { staffRoutes } from "./ops-staff";
 import { reviewRoutes } from "./ops-reviews";
+import { ReviewBlockedError, reviewIssuesHtml } from "./ops-review-guidance";
 import { db, view, requirePermission, pageNumber, type OpsEnv, type OpsContext } from "./ops-context";
 import { revision, readyCounts, OpsError, publicError } from "./ops-store";
 import { h, t, label, link, badge, panel, table, page, pagination, errors } from "./ops-view";
@@ -68,6 +69,11 @@ operations.onError((error,c)=>{
   if(!known)console.error(JSON.stringify({event:"operations_error",requestId:crypto.randomUUID()}));
   if(c.req.path.startsWith("/api/")||!c.get("view"))return c.json({error:code},status);
   const v=view(c);const message=known?publicError(code,v.lang==="zh"):t(v,["后台服务暂时不可用，请稍后重试。", "Operations is temporarily unavailable. Please retry later."]);
+  if(error instanceof ReviewBlockedError) {
+    const explanation=t(v,["本次操作未保存，请先处理下列具体缺少项。","Nothing was saved. Resolve the specific requirements below first."]);
+    if(c.req.header("Accept")==="application/json")return c.json({error:code,message:explanation,issues:error.issues},status);
+    return c.html(page(v,`reviews-${error.resource.kind}`,t(v,["尚未满足审核条件","Review requirements not met"]),`<div class="notice" role="alert"><strong>${h(error.resource.name)}</strong><p>${h(explanation)}</p>${reviewIssuesHtml(error.issues)}</div>`,t(v,["处理后请重新打开档案审核，加载最新资料后再提交。审核条件没有被跳过。","Reopen the review after resolving these items to load current details. Review checks are not bypassed."]),link(`/ops/reviews/resource/${encodeURIComponent(error.resource.id)}`,t(v,["返回档案审核 / 刷新检查","Return to review / refresh checks"]),"button-link")),status);
+  }
   const details=error instanceof ZodError?` ${error.issues.map(issue=>issue.path.join(".")).join(", ")}`:"";
   if((/^\/ops\/resources\/(fleet|driver|vehicle)\/create$/.test(c.req.path)||/^\/ops\/reviews\/resource\/[^/]+\/status$/.test(c.req.path))&&c.req.header("Accept")==="application/json")return c.json({error:code,message:message+details},status);
   return c.html(page(v,"error",t(v,["操作未完成", "Action not completed"]),errors(v,message+details)),status);

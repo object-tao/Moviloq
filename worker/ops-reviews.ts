@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { can, resourceKinds, readiness, type ResourceRow, type DocumentRow } from "../shared/operations";
+import { can, resourceKinds, type ResourceRow, type DocumentRow } from "../shared/operations";
+import { reviewIssues, ReviewBlockedError } from "./ops-review-guidance";
 import { resourceFields } from "./ops-fields";
 import { readinessHtml } from "./ops-resources";
 import { db, view, actor, value, reason, requirePermission, pageNumber, type OpsEnv, type OpsContext } from "./ops-context";
@@ -56,7 +57,7 @@ reviewRoutes.get("/ops/reviews/resource/:id",async c => {
   const events = await db(c).prepare("SELECT action,actor_id,reason,created_at FROM ops_events WHERE resource_id=? ORDER BY created_at DESC,id LIMIT 30").bind(row.id).all<{action:string;actor_id:string;reason:string;created_at:string}>();
   const history = panel(t(v,["最近 30 条操作", "Last 30 changes"]),table(v,[["操作", "Action"],["操作人", "Actor"],["原因", "Reason"],["时间（UTC）", "Time (UTC)"]],events.results.map(event => [h(event.action),h(event.actor_id),h(event.reason),h(event.created_at)])));
   const saved = c.req.query("saved") === "1" ? `<div class="notice success" role="status">${h(t(v,["审核操作已保存，操作日志已同步记录。", "Review saved together with its audit record."]))}</div>` : "";
-  const content=saved+panel(t(v,["档案审核资料（只读）", "Record review details (read-only)"]),readinessHtml(v,row,context)+details,badge(v,row.status))+documents+decision+history;
+  const content=saved+panel(t(v,["档案审核资料（只读）", "Record review details (read-only)"]),readinessHtml(v,row,context,row.status==="submitted")+details,badge(v,row.status))+documents+decision+history;
   // Lists also contain a creation form: avoid duplicate label targets.
   if(dialog)return c.html(`<section data-resource-review-fragment data-${row.kind}-review-fragment data-resource-kind="${row.kind}" data-resource-id="${h(row.id)}"><h3>${h(row.name)}</h3>${content.replaceAll('id="reason"',`id="${row.kind}-review-reason"`).replaceAll('for="reason"',`for="${row.kind}-review-reason"`)}</section>`);
   return c.html(page(v,`reviews-${row.kind}`,`${label(v,`reviews-${row.kind}`)} · ${row.name}`,content,t(v,["通过前会检查必要资料、有效期及车队关系，不会自动开通账号或接单。", "Approval checks required documents, expiry and fleet relationships. It does not create an account or enable live jobs."]),link(`/ops/reviews/${row.kind}`,t(v,["← 返回审核列表", "← Back to reviews"]),"button-link")+link(`/ops/resource/${row.id}`,t(v,["查看 / 维护档案", "View / maintain record"]),"button-link")));
@@ -68,8 +69,8 @@ async function changeStatus(c: OpsContext) {
   const action=z.enum(["submit","approve","needs_info","reject","suspend","restore"]).parse(value(c,"action"));requirePermission(c,action==="submit"?"resources:write":"review:write");const row=await getResource(db(c),z.string().min(1).parse(c.req.param("id")));checkVersion(row,value(c,"version"));const why=reason(c);
   const transitions:Record<string,{from:string[];to:string}>={submit:{from:["draft","needs_info","rejected"],to:"submitted"},approve:{from:["submitted"],to:"approved"},needs_info:{from:["submitted"],to:"needs_info"},reject:{from:["submitted"],to:"rejected"},suspend:{from:["approved"],to:"suspended"},restore:{from:["suspended"],to:"submitted"}};
   const transition=transitions[action];if(!transition?.from.includes(row.status))throw new OpsError("INVALID_TRANSITION");
-  if(action==="approve") { const data=await reviewContext(db(c),[row]);if(readiness({...row,status:"approved"},data.documents,data.configs,data.peers).length)throw new OpsError("REVIEW_NOT_READY"); }
-  if(action==="submit" && !JSON.parse(row.data_json).authorized)throw new OpsError("REVIEW_NOT_READY");
+  if(action==="approve") { const data=await reviewContext(db(c),[row]);const issues=reviewIssues(view(c),row,data,true);if(issues.length)throw new ReviewBlockedError(row,issues); }
+  if(action==="submit" && !JSON.parse(row.data_json).authorized)throw new ReviewBlockedError(row,reviewIssues(view(c),row,{documents:[],configs:new Map(),peers:[]},true).filter(issue=>issue.code==="authorization_missing"));
   await mutate(db(c),c.get("revision"),actor(c),{action:`resource.${action}`,type:row.kind,id:row.id,reason:why,before:{status:row.status,version:row.version},after:{status:transition.to,version:row.version+1}},[{sql:`UPDATE ops_resources SET status=?,version=version+1,updated_at=? WHERE id=? AND ${guard}`,values:[transition.to,new Date().toISOString(),row.id]}]);
   if(row.kind!=="fleet"&&action!=="submit"&&c.req.path.startsWith("/ops/reviews/")&&c.req.header("Accept")==="application/json")return c.json({saved:true,id:row.id});
   return c.redirect(action === "submit" ? `/ops/resource/${row.id}?saved=1` : `/ops/reviews/resource/${row.id}?saved=1`,303);

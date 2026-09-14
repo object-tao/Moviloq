@@ -11,16 +11,45 @@ export const resourceReviewScript = `(() => {
   const alert = dialog.querySelector('[data-review-error]');
   const message = alert.querySelector('p');
   const recovery = alert.querySelector('a');
+  const issues = alert.querySelector('[data-review-issues]');
+  const refreshHint = alert.querySelector('[data-review-refresh-hint]');
   const loading = dialog.querySelector('[data-review-loading]');
   const close = dialog.querySelector('[data-review-close]');
   let opener, controller, generation = 0, posting = false, uncertain = false, saved = false;
   const listUrl = window.location.href;
   function showError(text, recover = false, href = listUrl) {
+    issues.replaceChildren();
+    issues.hidden = true;
+    refreshHint.hidden = true;
     message.textContent = text;
     recovery.href = href;
     recovery.hidden = !recover;
     alert.hidden = false;
     alert.focus();
+  }
+  function showIssues(items) {
+    if (!Array.isArray(items)) return;
+    for (const item of items.slice(0, 20)) {
+      if (!item || typeof item.message !== 'string') continue;
+      const li = document.createElement('li');
+      const title = document.createElement('strong');
+      title.textContent = item.message;
+      li.append(title);
+      if (typeof item.detail === 'string') { const detail = document.createElement('p'); detail.textContent = item.detail; li.append(detail); }
+      const actions = document.createElement('div');
+      actions.className = 'review-issue-actions';
+      for (const action of Array.isArray(item.actions) ? item.actions.slice(0, 4) : []) {
+        if (typeof action?.href !== 'string' || !action.href.startsWith('/ops/') || typeof action.label !== 'string') continue;
+        const url = new URL(action.href, window.location.origin);
+        if (url.origin !== window.location.origin || !url.pathname.startsWith('/ops/')) continue;
+        const link = document.createElement('a');
+        link.href = url.href; link.textContent = action.label; link.target = '_blank'; link.rel = 'noopener';
+        actions.append(link);
+      }
+      li.append(actions); issues.append(li);
+    }
+    issues.hidden = !issues.children.length;
+    refreshHint.hidden = issues.hidden;
   }
   close.addEventListener('click', () => { if (!posting) dialog.close(); });
   dialog.addEventListener('cancel', event => { if (posting) event.preventDefault(); });
@@ -100,6 +129,7 @@ export const resourceReviewScript = `(() => {
         showError(dialog.dataset.session, true, result.error === 'PASSWORD_CHANGE_REQUIRED' ? '/password' : '/login');
       } else {
         showError(result.message || dialog.dataset.invalid);
+        showIssues(result.issues);
       }
     } catch {
       // A lost response may already have committed; require a fresh list before
@@ -124,7 +154,7 @@ export function resourceReviewDialog(v: View, kind: "driver" | "vehicle") {
     data-session="${h(t(v,["登录已失效或需要修改密码，请重新验证身份。", "Your session expired or a password change is required. Authenticate again."]))}"
     data-uncertain="${h(t(v,["暂时无法确认审核保存结果。请先刷新列表核对最新状态，不要重复提交。", "The review result could not be confirmed. Refresh the list to check the latest status before submitting another decision."]))}">
     <header class="dialog-heading"><div><h2 id="${kind}-review-title">${h(t(v,kind==="driver"?["司机审核", "Driver review"]:["车辆审核", "Vehicle review"]))}</h2><p id="${kind}-review-description">${h(t(v,["在此查看资料并处理审核；关联车队及附件详情将在新标签页打开。", "View details and review here. Linked fleet and document details open in a new tab."]))}</p></div><button type="button" class="dialog-close" data-review-close aria-label="${h(t(v,["关闭弹窗", "Close dialog"]))}">×</button></header>
-    <div class="dialog-error notice" data-review-error role="alert" tabindex="-1" hidden><p></p><a hidden>${h(t(v,["刷新列表 / 重新验证", "Refresh list / authenticate"]))}</a></div>
+    <div class="dialog-error notice" data-review-error role="alert" tabindex="-1" hidden><p></p><ul class="review-issues" data-review-issues hidden></ul><p data-review-refresh-hint hidden>${h(t(v,["处理入口在新标签页打开。完成后请关闭并重新打开审核弹窗，加载最新资料再提交。","Actions open in a new tab. After resolving these items, close and reopen the review dialog to load current details before submitting."]))}</p><a hidden>${h(t(v,["刷新列表 / 重新验证", "Refresh list / authenticate"]))}</a></div>
     <p class="review-loading" data-review-loading role="status">${h(t(v,["正在加载最新审核资料…", "Loading the latest review details…"]))}</p><div class="review-content" data-review-content></div>
     </dialog><script>${resourceReviewScript}</script>`;
 }

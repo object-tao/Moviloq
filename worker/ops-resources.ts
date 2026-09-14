@@ -7,16 +7,13 @@ import { getResource, reviewContext, checkVersion, mutate, guard, OpsError } fro
 import { h, t, label, link, badge, panel, table, page, form, field, fields, select, reasonField, submit, hidden, pagination, type View } from "./ops-view";
 import { resourceCreateDialog, resourceCreationLabels } from "./ops-resource-dialog";
 import { resourceReviewDialog } from "./ops-review-dialog";
+import { reviewIssues, reviewIssuesHtml } from "./ops-review-guidance";
 
 export const resourceRoutes = new Hono<OpsEnv>();
 const kindSchema = z.enum(resourceKinds);
-export function readinessHtml(v: View, row: ResourceRow, data: { documents: DocumentRow[]; configs: Awaited<ReturnType<typeof reviewContext>>["configs"]; peers: ResourceRow[] }) {
-  const problems = readiness(row,data.documents,data.configs,data.peers);
-  const items = problems.map(problem => {
-    const [code, doc] = problem.split(":");
-    return `<li>${h(code === "document_required" ? t(v,["必要资料缺失或未通过审核", "Required document missing or not approved"]) : code === "document_expired" ? t(v,["必要资料已过期", "Required document expired"]) : label(v,code))}${doc ? ` · ${h(label(v,doc))}` : ""}</li>`;
-  }).join("");
-  return `<div class="readiness">${problems.length ? `<strong>${h(t(v,["资料受限", "Preparation blocked"]))}</strong><ul>${items}</ul>` : `<strong>${h(t(v,["资料已就绪", "Records ready"]))}</strong>`}<div class="muted">${h(t(v,["资料状态不代表已开通司机账号或正式接单。", "Readiness does not create an account or enable live jobs."]))}</div></div>`;
+export function readinessHtml(v: View, row: ResourceRow, data: { documents: DocumentRow[]; configs: Awaited<ReturnType<typeof reviewContext>>["configs"]; peers: ResourceRow[] }, forApproval = false) {
+  const issues=reviewIssues(v,row,data,forApproval);
+  return `<div class="readiness">${issues.length ? `<strong>${h(t(v,["尚需处理以下条件", "Resolve the following requirements"]))}</strong>${reviewIssuesHtml(issues)}` : `<strong>${h(t(v,forApproval&&row.status!=="approved"?["审核前置条件已满足，等待审核决定。","Prerequisites met; awaiting a review decision."]:["资料已就绪", "Records ready"]))}</strong>`}<div class="muted">${h(t(v,["资料状态不代表已开通司机账号或正式接单。", "Readiness does not create an account or enable live jobs."]))}</div></div>`;
 }
 resourceRoutes.get("/ops/resources/:kind", async c => {
   requirePermission(c,"resources:read"); const v=view(c); const kind=kindSchema.parse(c.req.param("kind")); const num=pageNumber(c);
@@ -52,7 +49,7 @@ resourceRoutes.get("/ops/resources/:kind/new",async c=>{
 resourceRoutes.get("/ops/resource/:id",async c=>{
   requirePermission(c,"resources:read");const row=await getResource(db(c),c.req.param("id"));const v=view(c);const context=await reviewContext(db(c),[row]);
   const data=JSON.parse(row.data_json); const documents=context.documents.filter(doc=>doc.resource_id===row.id);
-  const details=can(v.role,"resources:write") ? await resourceForm(c,row.kind,row) : `<dl class="detail">${resourceFields[row.kind].map(def=>`<dt>${h(t(v,def.label))}</dt><dd>${h(Array.isArray(data[def.key]) ? data[def.key].map((item:string)=>label(v,item)).join(", ") : data[def.key])}</dd>`).join("")}</dl>`;
+  const details=can(v.role,"resources:write") ? await resourceForm(c,row.kind,row) : `<dl class="detail">${resourceFields[row.kind].map(def=>`<dt${def.key==="authorized"?' id="authorized"':""}>${h(t(v,def.label))}</dt><dd>${h(Array.isArray(data[def.key]) ? data[def.key].map((item:string)=>label(v,item)).join(", ") : data[def.key])}</dd>`).join("")}</dl>`;
   const submission=can(v.role,"resources:write") && ["draft","needs_info","rejected"].includes(row.status) ? form(v,`/ops/resource/${row.id}/status`,hidden("version",row.version)+reasonField(v)+submit(v,["提交审核", "Submit for review"],"action","submit")) : "";
   const review=panel(t(v,["提交与审核进度", "Submission and review progress"]),submission+`<div class="pad"><p class="note">${h(t(v,["通过、补件、拒绝、暂停与恢复统一在独立审核模块处理。", "Approval, information requests, rejection, suspension and restoration are handled in the dedicated review module."]))}</p>${link(`/ops/reviews/resource/${row.id}`,t(v,["进入审核详情", "Open review details"]),"button-link")}</div>`);
   const docTable=table(v,[["资料类型", "Document type"],["状态", "Status"],["有效至（UTC 日期）", "Valid through (UTC date)"],["文件", "File"]],documents.map(doc=>[h(label(v,doc.document_type)),badge(v,doc.status)+(doc.expires_on<new Date().toISOString().slice(0,10)?` <span class="badge suspended">${h(t(v,["过期", "Expired"]))}</span>`:""),h(doc.expires_on),link(`/ops/document/${doc.id}`,doc.filename)]));
@@ -64,7 +61,7 @@ resourceRoutes.get("/ops/resource/:id",async c=>{
   }
   const events=(await db(c).prepare("SELECT action,actor_id,reason,created_at FROM ops_events WHERE resource_id = ? ORDER BY created_at DESC LIMIT 30").bind(row.id).all<{action:string;actor_id:string;reason:string;created_at:string}>()).results;
   const history=panel(t(v,["最近 30 条操作", "Last 30 changes"]),table(v,[["操作", "Action"],["操作人", "Actor"],["原因", "Reason"],["时间（UTC）", "Time (UTC)"]],events.map(event=>[h(event.action),h(event.actor_id),h(event.reason),h(event.created_at)])));
-  return c.html(page(v,row.kind,row.name,(c.req.query("saved")==="1" ? `<div class="notice success" role="status">${h(t(v,["已保存，数据与操作日志已同步记录。", "Saved together with its audit record."]))}</div>` : "")+panel(t(v,["档案资料", "Record details"]),readinessHtml(v,row,context)+details,badge(v,row.status))+review+panel(t(v,["资料附件与版本", "Documents and versions"]),docTable+upload)+pairing+history,t(v,["修改资料后需要重新审核；首次建档不启用司机账号或真实运输。", "Edits require a fresh review. Records do not enable driver accounts or live deliveries."]),link(`/ops/resources/${row.kind}`,t(v,["← 返回列表", "← Back to list"]),"button-link")));
+  return c.html(page(v,row.kind,row.name,(c.req.query("saved")==="1" ? `<div class="notice success" role="status">${h(t(v,["已保存，数据与操作日志已同步记录。", "Saved together with its audit record."]))}</div>` : "")+panel(t(v,["档案资料", "Record details"]),readinessHtml(v,row,context)+details,badge(v,row.status))+`<div id="submission">${review}</div><div id="documents">${panel(t(v,["资料附件与版本", "Documents and versions"]),docTable+upload)}</div><div id="pairing">${pairing}</div>`+history,t(v,["修改资料后需要重新审核；首次建档不启用司机账号或真实运输。", "Edits require a fresh review. Records do not enable driver accounts or live deliveries."]),link(`/ops/resources/${row.kind}`,t(v,["← 返回列表", "← Back to list"]),"button-link")));
 });
 async function saveResource(c: OpsContext, row?: ResourceRow) {
   requirePermission(c,"resources:write");const kind=row?.kind ?? kindSchema.parse(c.req.param("kind"));const input=resourceSchemas[kind].parse(parseFields(resourceFields[kind],c.get("body")));const why=reason(c);
