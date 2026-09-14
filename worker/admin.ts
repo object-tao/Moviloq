@@ -7,6 +7,7 @@ import { hashPassword, validNewPassword, verifyPassword } from "./admin-password
 import { adminCss, loginHtml, passwordHtml, readyHtml, unavailableHtml } from "./admin-view";
 import { operations } from "./admin-ops";
 import { opsCss, opsNavigationCss } from "./ops-view";
+import { fleetDialogHash, fleetDialogCss } from "./ops-fleet-dialog";
 import { permissionsFor, roles, type Role } from "../shared/operations";
 
 export type AdminBindings = { ENVIRONMENT: string; ADMIN_HOSTNAME: string; ADMIN_DB?: D1Database; OPS_DB?: D1Database; ADMIN_AUTH_SECRET?: string };
@@ -26,9 +27,10 @@ function passwordInput(body: Record<string, string | File>, field: string) { ret
 
 export function createAdminApp() {
   const app = new Hono<AdminEnv>();
-  app.use("*", secureHeaders({ referrerPolicy: "same-origin", contentSecurityPolicy: {
-    defaultSrc: ["'none'"], styleSrc: ["'self'"], imgSrc: ["'self'"], baseUri: ["'none'"], frameAncestors: ["'none'"], formAction: ["'self'"]
-  } }));
+  app.use("*", (c,next)=>secureHeaders({ referrerPolicy: "same-origin", contentSecurityPolicy: {
+    defaultSrc: ["'none'"], styleSrc: ["'self'"], imgSrc: ["'self'"], baseUri: ["'none'"], frameAncestors: ["'none'"], formAction: ["'self'"],
+    ...(c.req.method==="GET"&&c.req.path==="/ops/resources/fleet" ? { scriptSrc: [`'${fleetDialogHash}'`], connectSrc: ["'self'"] } : {})
+  } })(c,next));
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store"); c.header("X-Robots-Tag", "noindex, nofollow, noarchive");
     const url = new URL(c.req.url);
@@ -39,7 +41,7 @@ export function createAdminApp() {
   });
   app.use("*", (c,next) => bodyLimit({ maxSize: /^\/ops\/resource\/[^/]+\/document$/.test(c.req.path) ? 600 * 1024 : c.req.path.startsWith("/ops/") ? 128 * 1024 : 8192, onError: c => c.json({ error: "REQUEST_TOO_LARGE" }, 413) })(c,next));
   app.get("/admin.css", c => c.body(adminCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
-  app.get("/ops.css", c => c.body(opsCss + opsNavigationCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
+  app.get("/ops.css", c => c.body(opsCss + opsNavigationCss + fleetDialogCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
   app.get("/robots.txt", c => c.text("User-agent: *\nDisallow: /\n"));
   app.get("/favicon.ico", c => c.body(null, 204));
   app.get("/api/health", c => c.json({ service: "moviloq-admin", authentication: "password", configured: !!c.env.ADMIN_DB && /^[a-f0-9]{64}$/.test(c.env.ADMIN_AUTH_SECRET ?? ""), businessDataConnected: !!c.env.OPS_DB, businessOperationsEnabled: !!c.env.OPS_DB, liveOrdersEnabled: false, paymentsEnabled: false, release: "operations-phase-one" }));

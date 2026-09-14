@@ -5,6 +5,7 @@ import { resourceFields, parseFields } from "./ops-fields";
 import { db, view, actor, value, reason, requirePermission, pageNumber, type OpsEnv, type OpsContext } from "./ops-context";
 import { getResource, reviewContext, checkVersion, mutate, guard, OpsError } from "./ops-store";
 import { h, t, label, link, badge, panel, table, page, form, field, fields, select, reasonField, submit, hidden, pagination, type View } from "./ops-view";
+import { fleetCreateDialog } from "./ops-fleet-dialog";
 
 export const resourceRoutes = new Hono<OpsEnv>();
 const kindSchema = z.enum(resourceKinds);
@@ -22,12 +23,25 @@ resourceRoutes.get("/ops/resources/:kind", async c => {
   const rows=await db(c).prepare("SELECT * FROM ops_resources WHERE kind = ? AND instr(lower(name),lower(?)) > 0 AND (? = '' OR status = ?) ORDER BY updated_at DESC,id LIMIT 26 OFFSET ?").bind(kind,query,status,status,(num-1)*25).all<ResourceRow>();
   const visible=rows.results.slice(0,25); const context=await reviewContext(db(c),visible);
   const filters=`<form class="toolbar" method="get"><label>${h(t(v,["搜索名称", "Search name"]))}<input name="q" value="${h(query)}" maxlength="100"></label>${select(v,"status",["审核状态", "Review status"], ["draft","submitted","needs_info","approved","rejected","suspended"].map(id=>({id,name:label(v,id)})),status,["全部状态", "All statuses"])}${submit(v,["查询", "Search"])}</form>`;
-  return c.html(page(v,kind,label(v,`${kind}-list`),panel(t(v,["档案列表", "Records"]),filters+table(v,[["名称", "Name"],["状态", "Status"],["资料检查", "Readiness"],["版本", "Version"],["更新时间（UTC）", "Updated (UTC)"]],visible.map(row=>[link(`/ops/resource/${row.id}`,row.name),badge(v,row.status),h(t(v,readiness(row,context.documents,context.configs,context.peers).length ? ["受限 / 待处理", "Blocked / needs attention"] : ["资料就绪", "Records ready"])),String(row.version),h(row.updated_at.slice(0,16).replace("T"," "))]))+pagination(v,`/ops/resources/${kind}?q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}`,num,rows.results.length>25)),t(v,["维护合作资料；审核决定集中在「审核管理」。新建档案不会创建司机登录账号。", "Maintain partner records; review decisions are handled in Review management. Creating a record does not create a driver account."]),can(v.role,"resources:write") ? link(`/ops/resources/${kind}/new`,t(v,["＋ 新增档案", "+ Add record"]),"button-link") : ""));
+  const isFleet=kind==="fleet";
+  const headings: [string,string][]=[["名称", "Name"],["状态", "Status"],["资料检查", "Readiness"],["版本", "Version"],["更新时间（UTC）", "Updated (UTC)"]];
+  if(isFleet)headings.push(["操作", "Actions"]);
+  const entries=visible.map(row=>{
+    const cells=[link(`/ops/resource/${row.id}`,row.name),badge(v,row.status),h(t(v,readiness(row,context.documents,context.configs,context.peers).length ? ["受限 / 待处理", "Blocked / needs attention"] : ["资料就绪", "Records ready"])),String(row.version),h(row.updated_at.slice(0,16).replace("T"," "))];
+    if(isFleet)cells.push(`<div class="row-actions">${link(`/ops/resource/${row.id}`,t(v,can(v.role,"resources:write") ? ["编辑", "Edit"] : ["查看", "View"]))}${link(`/ops/reviews/resource/${row.id}`,t(v,can(v.role,"review:write") ? ["审核编辑", "Edit review"] : ["查看审核", "View review"]))}</div>`);
+    return cells;
+  });
+  const list=table(v,headings,entries);
+  const dialog=isFleet&&can(v.role,"resources:write") ? fleetCreateDialog(v,await resourceForm(c,kind,undefined,true)) : "";
+  const added=isFleet&&c.req.query("created")==="1" ? `<div class="notice success" role="status">${h(t(v,["车队已新增并保存为草稿，操作日志已记录。", "Fleet added as a draft and recorded in the audit log."]))}</div>` : "";
+  const addAction=!can(v.role,"resources:write") ? "" : isFleet ? `<a class="button-link" href="/ops/resources/fleet/new" data-fleet-create aria-haspopup="dialog" aria-controls="fleet-create-dialog">${h(t(v,["新增车队", "Add fleet"]))}</a>` : link(`/ops/resources/${kind}/new`,t(v,["＋ 新增档案", "+ Add record"]),"button-link");
+  return c.html(page(v,kind,label(v,`${kind}-list`),added+panel(t(v,["档案列表", "Records"]),filters+(isFleet?`<div class="fleet-table">${list}</div>`:list)+pagination(v,`/ops/resources/${kind}?q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}`,num,rows.results.length>25))+dialog,t(v,["维护合作资料；审核决定集中在「审核管理」。新建档案不会创建司机登录账号。", "Maintain partner records; review decisions are handled in Review management. Creating a record does not create a driver account."]),addAction));
 });
-async function resourceForm(c: OpsContext, kind: ResourceKind, row?: ResourceRow) {
+async function resourceForm(c: OpsContext, kind: ResourceKind, row?: ResourceRow, modal = false) {
   const v=view(c); const data=row ? JSON.parse(row.data_json) : { country:"DE", vehicleClass:"transporter", vehicleClasses:["transporter"] };
   const fleets=kind==="fleet" ? [] : (await db(c).prepare("SELECT id,name FROM ops_resources WHERE kind = 'fleet' ORDER BY name LIMIT 500").all<{id:string;name:string}>()).results;
-  return form(v,row ? `/ops/resource/${row.id}/save` : `/ops/resources/${kind}/create`,hidden("version",row?.version ?? 0)+field(v,{key:"name",label:["显示名称", "Display name"],required:true,max:160},row?.name)+ (kind!=="fleet" ? select(v,"fleet_id",["所属车队", "Fleet"],fleets,row?.fleet_id ?? "",["独立合作 / 暂无车队", "Independent / no fleet"]) : "")+fields(v,resourceFields[kind],data)+reasonField(v)+submit(v));
+  const actions=modal ? `<div class="dialog-actions"><button type="button" class="btn secondary" data-dialog-close>${h(t(v,["取消", "Cancel"]))}</button>${submit(v,["保存车队", "Save fleet"])}</div>` : submit(v);
+  return form(v,row ? `/ops/resource/${row.id}/save` : `/ops/resources/${kind}/create`,hidden("version",row?.version ?? 0)+(modal?hidden("return_to","fleet-list"):"")+field(v,{key:"name",label:modal?["车队名称", "Fleet name"]:["显示名称", "Display name"],required:true,max:160},row?.name)+ (kind!=="fleet" ? select(v,"fleet_id",["所属车队", "Fleet"],fleets,row?.fleet_id ?? "",["独立合作 / 暂无车队", "Independent / no fleet"]) : "")+fields(v,resourceFields[kind],data)+reasonField(v)+actions);
 }
 resourceRoutes.get("/ops/resources/:kind/new",async c=>{
   requirePermission(c,"resources:write");const kind=kindSchema.parse(c.req.param("kind"));const v=view(c);
@@ -63,6 +77,10 @@ async function saveResource(c: OpsContext, row?: ResourceRow) {
   const id=row?.id ?? crypto.randomUUID();const at=new Date().toISOString();const status=row?.status==="suspended" ? "suspended" : row?.status==="approved" || row?.status==="submitted" ? "submitted" : row?.status ?? "draft";
   const after={name,status,fleetId,data:input,version:(row?.version??0)+1};
   await mutate(db(c),c.get("revision"),actor(c),{action:row?"resource.updated":"resource.created",type:kind,id,reason:why,before:row,after},[{sql:row ? `UPDATE ops_resources SET name=?,fleet_id=?,registration=?,data_json=?,status=?,version=version+1,updated_at=? WHERE id=? AND ${guard}` : `INSERT INTO ops_resources (name,fleet_id,registration,data_json,status,updated_at,id,kind,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE ${guard}`,values:row ? [name,fleetId,registration,JSON.stringify(input),status,at,id] : [name,fleetId,registration,JSON.stringify(input),status,at,id,kind,at]}]);
+  if(!row&&kind==="fleet"&&value(c,"return_to")==="fleet-list") {
+    const redirect="/ops/resources/fleet?created=1";
+    return c.req.header("Accept")==="application/json" ? c.json({redirect},201) : c.redirect(redirect,303);
+  }
   return c.redirect(`/ops/resource/${id}?saved=1`,303);
 }
 resourceRoutes.post("/ops/resources/:kind/create",c=>saveResource(c));

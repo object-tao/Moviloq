@@ -37,8 +37,21 @@ try {
   await page.screenshot({path:join(destination,"operations-empty-desktop.png"),fullPage:true});
   const overview=await context.request.get(origin+"/api/admin/overview");assert.equal(overview.status(),200);assert.deepEqual((await overview.json()).resources,[]);
   await page.getByRole("link",{name:"English",exact:true}).click();await page.waitForURL(origin+"/");assert.equal(await page.locator("h1").innerText(),"Your operations workspace");
-  // A real browser creates a record, submits a policy, uploads private evidence and reviews it.
-  await page.goto(origin+"/ops/resources/fleet/new");await page.locator('[name="name"]').fill("Synthetic Frankfurt Fleet");await page.locator('[name="legalName"]').fill("Synthetic Fleet GmbH");await page.locator('[name="source"]').fill("Authorized synthetic QA only");await page.locator('[name="authorized"]').check();await page.locator('[name="reason"]').fill("Create synthetic test fleet");await page.getByRole("button",{name:"Save",exact:true}).click();await page.waitForURL(/\/ops\/resource\/[^/?]+\?saved=1$/);const fleetId=new URL(page.url()).pathname.split("/")[3];
+  // Create through the real modal, keeping server validation errors and values in place.
+  await page.goto(origin+'/ops/resources/fleet');const addFleet=page.getByRole('link',{name:'Add fleet',exact:true});await addFleet.click();
+  const dialog=page.getByRole('dialog',{name:'Add fleet',exact:true});assert(await dialog.isVisible());assert.equal(await page.locator(':focus').getAttribute('name'),'name');
+  await page.keyboard.press('Escape');assert(!(await dialog.isVisible()));assert(await addFleet.evaluate(element=>element===document.activeElement));await addFleet.click();
+  await dialog.locator('[name="name"]').fill('Synthetic Frankfurt Fleet');await dialog.locator('[name="legalName"]').fill('Synthetic Fleet GmbH');await dialog.locator('[name="source"]').fill('Authorized synthetic QA only');await dialog.locator('[name="authorized"]').check();await dialog.locator('[name="reason"]').fill('Create synthetic test fleet');await dialog.locator('[name="phone"]').fill('invalid phone');
+  const invalidFleet=page.waitForResponse(response=>response.url()===origin+'/ops/resources/fleet/create'&&response.status()===422);await dialog.getByRole('button',{name:'Save fleet',exact:true}).click();await invalidFleet;await dialog.getByRole('alert').waitFor();assert.equal(await dialog.locator('[name="name"]').inputValue(),'Synthetic Frankfurt Fleet');assert.equal((await db.prepare('SELECT count(*) n FROM ops_resources').first()).n,0);
+  await dialog.locator('[name="phone"]').fill('');
+  await page.screenshot({path:join(destination,'fleet-create-dialog-desktop.png'),fullPage:true});
+  // Two immediate submit events must still generate one creation request.
+  const savedFleet=page.waitForResponse(response=>response.url()===origin+'/ops/resources/fleet/create'&&response.status()===201);
+  await dialog.locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});await savedFleet;await page.waitForURL('**/ops/resources/fleet?created=1');
+  assert.equal((await db.prepare('SELECT count(*) n FROM ops_resources').first()).n,1);assert.equal((await db.prepare("SELECT count(*) n FROM ops_events WHERE action='resource.created'").first()).n,1);
+  const fleetId=(await db.prepare("SELECT id FROM ops_resources WHERE kind='fleet'").first()).id;
+  const fleetRow=page.locator('.fleet-table tbody tr').filter({hasText:'Synthetic Frankfurt Fleet'});assert(await fleetRow.getByRole('link',{name:'Edit review',exact:true}).isVisible());
+  await fleetRow.getByRole('link',{name:'Edit',exact:true}).click();await page.locator('[name="contact"]').fill('Synthetic edited contact');await page.locator('form[action$="/save"] [name="reason"]').fill('Test list edit action');await page.locator('form[action$="/save"]').getByRole('button',{name:'Save',exact:true}).click();await page.waitForURL(/saved=1$/);
   await page.reload();assert.equal(await page.locator('[name="legalName"]').inputValue(),"Synthetic Fleet GmbH");
   await page.goto(origin+"/ops/configs/new?kind=requirements&scope=fleet");await page.locator('[name="title"]').fill("Synthetic fleet review policy");await page.locator('[name="requiredDocuments"][value="other"]').check();await page.locator('[name="locallyConfirmed"]').check();await page.locator('[name="reason"]').fill("Confirmed synthetic test checklist");await page.getByRole("button",{name:"Save draft",exact:true}).click();await page.waitForURL(/\/ops\/config\/[^/?]+\?saved=1$/);
   const publish=page.locator('form[action$="/publish"]');await publish.locator('[name="reason"]').fill("Publish synthetic policy");await publish.getByRole("button",{name:"Confirm publication"}).click();await page.waitForURL(/saved=1$/);
@@ -66,8 +79,26 @@ try {
     await page.setViewportSize({width,height});await page.goto(origin+`/ops/language/${language}`);
     for(const [section,path]of [["overview","/"],["fleets","/ops/resources/fleet"],["drivers","/ops/resources/driver"],["vehicles","/ops/resources/vehicle"],["review","/ops/reviews"],["review-fleet","/ops/reviews/fleet?status=approved"],["review-driver","/ops/reviews/driver"],["review-vehicle","/ops/reviews/vehicle"],["rules","/ops/configs"],["staff","/ops/staff"],["audit","/ops/audit"]]){
       const res=await page.goto(origin+path);assert.equal(res.status(),200,`${name} ${section}`);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),`${name} ${section} overflow`);await page.screenshot({path:join(destination,`operations-${section}-${name}.png`),fullPage:true});
+      if(section==='fleets'){
+        const opener=page.locator('[data-fleet-create]');await opener.click();const modal=page.locator('#fleet-create-dialog');assert(await modal.isVisible());
+        assert(await modal.evaluate(element=>element.scrollWidth<=element.clientWidth));assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+        await page.screenshot({path:join(destination,`fleet-create-dialog-${name}.png`),fullPage:true});await modal.locator('[data-dialog-close]').first().click();assert(!(await modal.isVisible()));
+        const row=page.locator('.fleet-table tbody tr').first();await row.locator('.row-actions a').last().click();await page.waitForURL(/\/ops\/reviews\/resource\//);assert.equal(await page.locator('nav [aria-current="page"]').getAttribute('href'),'/ops/reviews/fleet');
+      }
     }
   }
+  // An interrupted response must not silently retry or allow a duplicate save.
+  await page.goto(origin+'/ops/resources/fleet');await page.locator('[data-fleet-create]').click();
+  const interruptedDialog=page.locator('#fleet-create-dialog');
+  for(const [key,value]of Object.entries({name:'Never sent fixture',legalName:'Never sent company',source:'Synthetic network failure fixture',reason:'Verify no automatic retries'}))await interruptedDialog.locator(`[name="${key}"]`).fill(value);
+  const beforeInterrupted=(await db.prepare('SELECT count(*) n FROM ops_resources').first()).n;
+  let interruptedRequests=0;await page.route('**/ops/resources/fleet/create',async route=>{interruptedRequests++;await route.abort('failed');});
+  await interruptedDialog.getByRole('button',{name:'Save fleet',exact:true}).click();await interruptedDialog.getByRole('alert').waitFor();
+  assert(await interruptedDialog.getByRole('link',{name:'Check fleet list',exact:true}).isVisible());assert(await interruptedDialog.getByRole('button',{name:'Save fleet',exact:true}).isDisabled());
+  await interruptedDialog.locator('form').evaluate(form=>form.requestSubmit());assert.equal(interruptedRequests,1);assert.equal((await db.prepare('SELECT count(*) n FROM ops_resources').first()).n,beforeInterrupted);
+  await page.unroute('**/ops/resources/fleet/create');await page.goto(origin+'/ops/resources/fleet');
+  // The same entry remains usable without JavaScript.
+  const noScript=await browser.newContext({javaScriptEnabled:false,storageState:await context.storageState()});const fallbackPage=await noScript.newPage();await fallbackPage.goto(origin+'/ops/resources/fleet');await fallbackPage.getByRole('link',{name:'Add fleet',exact:true}).click();await fallbackPage.waitForURL('**/ops/resources/fleet/new');assert(await fallbackPage.locator('form[action="/ops/resources/fleet/create"]').isVisible());await noScript.close();
   // Exercise staff mutations and role revocation in real D1, not just the SQLite shim.
   const staffHtml=await(await context.request.get(origin+"/ops/staff")).text();const ownerCsrf=/name="csrf" value="([a-f0-9]{64})"/.exec(staffHtml)[1];
   const staffPassword=randomBytes(24).toString("base64url");const staffReplacement=randomBytes(24).toString("base64url");
