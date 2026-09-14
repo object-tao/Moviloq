@@ -9,7 +9,8 @@ import { reviewContext, mutate, revision, guard } from "./ops-store";
 import { configuredVehicles, publishedConfigs, quoteWithConfig } from "./public-config";
 import { app as publicApp } from "./index";
 import { blankBooking } from "../shared/booking";
-import { fleetDialogHash } from "./ops-fleet-dialog";
+import { resourceDialogHash } from "./ops-resource-dialog";
+import { driverReviewHash } from "./ops-driver-review-dialog";
 
 const origin="https://admin.moviloq.com";
 const app=createAdminApp();
@@ -36,12 +37,66 @@ async function approve(id:string){await success(await upload(id));const doc=last
 function stringData(data:Record<string,unknown>){return Object.fromEntries(Object.entries(data).map(([key,val])=>[key,typeof val==="boolean"?val?"on":"":String(val)]));}
 async function price(base:number){const location=await success(await post("/ops/configs/create",{kind:"pricing",scope:"transporter",title:`Test pricing ${base}`,...stringData({...defaultPricing("transporter"),baseNet:base}),reason:"Create test pricing"}));return location.split("/")[3].split("?")[0];}
 describe("operations preparation",()=>{
+  it("renders driver creation and review dialogs with scoped scripts and role-specific actions",async()=>{
+    const fleet=await create();const driver=await create("driver",{fleet_id:fleet});
+    const response=await request("/ops/resources/driver");const html=await response.text();
+    for(const item of ['id="driver-create-dialog"','id="driver-review-dialog"','data-driver-review aria-haspopup="dialog"','name="return_to" value="driver-list"','name="vehicleClasses"',`value="${fleet}"`,"新增司机","审核编辑"])expect(html).toContain(item);
+    expect(html).toContain(`href="/ops/resource/${driver}">编辑`);
+    for(const hash of [resourceDialogHash,driverReviewHash])expect(response.headers.get("Content-Security-Policy")).toContain(hash);
+    expect(response.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
+    expect((await request("/ops/resources/fleet")).headers.get("Content-Security-Policy")).not.toContain(driverReviewHash);
+    signIn("operations");const operator=await(await request("/ops/resources/driver")).text();expect(operator).toContain("新增司机");expect(operator).toContain(">查看审核</a>");expect(operator).not.toContain(">审核编辑</a>");
+    signIn("reviewer");const reviewer=await(await request("/ops/resources/driver")).text();expect(reviewer).not.toContain('id="driver-create-dialog"');expect(reviewer).toContain('id="driver-review-dialog"');expect(reviewer).toContain(">审核编辑</a>");
+  });
+  it("creates audited driver drafts with fleet and multiple vehicle classes and validates modal input",async()=>{
+    const fleet=await create();const data={...common,name:"Modal driver",fleet_id:fleet,vehicleClasses:["caddy","transporter"],return_to:"driver-list"};
+    const invalidCases:Record<string,string|string[]>[]=[{vehicleClasses:[]},{fleet_id:"missing-fleet"},{phone:"not a phone"}];
+    for(const extra of invalidCases){
+      const response=await post("/ops/resources/driver/create",{...data,...extra},origin,"application/json");expect([422,404]).toContain(response.status);expect(await response.json()).toHaveProperty("message");
+    }
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_resources WHERE kind='driver'").get()?.n).toBe(0);
+    const response=await post("/ops/resources/driver/create",data,origin,"application/json");expect(response.status).toBe(201);expect(await response.json()).toEqual({redirect:"/ops/resources/driver?created=1"});
+    const driver=ops.sqlite.prepare("SELECT * FROM ops_resources WHERE kind='driver'").get() as ResourceRow;
+    expect(driver).toMatchObject({status:"draft",fleet_id:fleet});expect(JSON.parse(driver.data_json).vehicleClasses).toEqual(["caddy","transporter"]);
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE resource_id=?").get(driver.id)?.n).toBe(1);expect(ops.sqlite.prepare("SELECT count(*) n FROM users").get()?.n).toBe(0);
+    signIn("reviewer");expect((await post("/ops/resources/driver/create",data,origin,"application/json")).status).toBe(403);
+    signIn("owner");expect((await post("/ops/resources/driver/create",data,"https://untrusted.example","application/json")).status).toBe(403);
+  });
+  it("serves authenticated driver-only escaped review fragments with unchanged permissions",async()=>{
+    const fleet=await create();const id=await create("driver",{name:'Driver <script>alert("x")</script>'});
+    await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit fixture"}));
+    const path=`/ops/reviews/resource/${id}?dialog=1`;const response=await request(path);const html=await response.text();
+    expect(html).toContain(`data-resource-id="${id}"`);expect(html).toContain("&lt;script&gt;");expect(html).not.toContain("<script>");expect(html).not.toContain("<html");expect(html).not.toContain("<nav");expect(html).not.toContain(`action="/ops/resource/${id}/save"`);expect(html).toContain('value="approve"');
+    expect(response.headers.get("Cache-Control")).toContain("no-store");expect((await request(`/ops/reviews/resource/${fleet}?dialog=1`)).status).toBe(422);
+    signIn("operations");expect(await(await request(path)).text()).not.toContain('value="approve"');
+    signIn("reviewer");expect(await(await request(path)).text()).toContain('value="approve"');
+    jar.clear();expect((await request(path)).headers.get("location")).toBe("/login");
+  });
+  it("validates AJAX driver decisions, preserves versions and audit, and allows reviewed evidence approval",async()=>{
+    const id=await create("driver");await success(await post(`/ops/resource/${id}/status`,{version:version(id),action:"submit",reason:"Submit driver"}));
+    const path=`/ops/reviews/resource/${id}/status`;const data={version:version(id),action:"approve",reason:"Driver review"};
+    const early=await post(path,data,origin,"application/json");expect(early.status).toBe(422);expect(await early.json()).toMatchObject({error:"REVIEW_NOT_READY",message:expect.any(String)});
+    signIn("operations");expect((await post(path,{...data,action:"reject"},origin,"application/json")).status).toBe(403);
+    signIn("reviewer");expect((await post(path,{...data,action:"reject"},"https://untrusted.example","application/json")).status).toBe(403);
+    const stale=await post(path,{...data,action:"reject",version:"0"},origin,"application/json");expect(stale.status).toBe(409);expect(await stale.json()).toMatchObject({error:"VERSION_CONFLICT"});
+    expect((await post(path,{...data,reason:""},origin,"application/json")).status).toBe(422);
+    const needs=await post(path,{...data,action:"needs_info"},origin,"application/json");expect(needs.status).toBe(200);expect(await needs.json()).toEqual({saved:true,id});expect(row(id).status).toBe("needs_info");
+    expect((await post(path,{...data,action:"needs_info"},origin,"application/json")).status).toBe(409);
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE action='resource.needs_info'").get()?.n).toBe(1);
+    signIn("owner");await policy("driver");await success(await upload(id));const doc=lastDoc(id);await success(await post(`/ops/document/${doc.id}/review`,{version:String(doc.version),action:"approved",reason:"Evidence checked"}));
+    expect(row(id).status).toBe("submitted");
+    const approved=await post(path,{...data,version:version(id)},origin,"application/json");expect(approved.status).toBe(200);expect(await approved.json()).toEqual({saved:true,id});expect(row(id).status).toBe("approved");
+    for(const [action,status]of [["suspend","suspended"],["restore","submitted"],["reject","rejected"]]){
+      expect((await post(path,{...data,action,version:version(id)},origin,"application/json")).status).toBe(200);expect(row(id).status).toBe(status);
+    }
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM users").get()?.n).toBe(0);
+  });
   it("shows a fleet creation dialog and right-side actions scoped to staff permissions",async()=>{
     const id=await create();const res=await request("/ops/resources/fleet");const html=await res.text();
     expect(html).toContain('id="fleet-create-dialog"');expect(html).toContain('aria-haspopup="dialog"');expect(html).toContain("新增车队");expect(html).toContain('name="return_to" value="fleet-list"');
     const actions=html.match(/<div class="row-actions">([\s\S]*?)<\/div>/)?.[1];
     expect(actions).toContain(`href="/ops/resource/${id}">编辑`);expect(actions).toContain(`href="/ops/reviews/resource/${id}">审核编辑`);
-    expect(res.headers.get("Content-Security-Policy")).toContain(`script-src '${fleetDialogHash}'`);expect(res.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
+    expect(res.headers.get("Content-Security-Policy")).toContain(`script-src '${resourceDialogHash}'`);expect(res.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
     expect((await request("/login")).headers.get("Content-Security-Policy")).not.toContain("script-src");
     signIn("operations");const operator=await(await request("/ops/resources/fleet")).text();expect(operator).toContain('id="fleet-create-dialog"');expect(operator).toContain(">查看审核</a>");expect(operator).not.toContain(">审核编辑</a>");
     signIn("reviewer");const reviewer=await(await request("/ops/resources/fleet")).text();expect(reviewer).not.toContain('id="fleet-create-dialog"');expect(reviewer).not.toContain(">编辑</a>");expect(reviewer).toContain(">审核编辑</a>");

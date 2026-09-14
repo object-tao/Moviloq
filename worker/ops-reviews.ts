@@ -38,6 +38,8 @@ reviewRoutes.get("/ops/reviews/:kind",queue);
 reviewRoutes.get("/ops/reviews/resource/:id",async c => {
   requirePermission(c,"resources:read");
   const row = await getResource(db(c),c.req.param("id")), v = view(c);
+  const dialog = c.req.query("dialog") === "1";
+  if(dialog && row.kind !== "driver")throw new OpsError("INVALID_INPUT");
   const context = await reviewContext(db(c),[row]);
   const data = JSON.parse(row.data_json);
   const fleet = context.peers.find(peer => peer.id === row.fleet_id);
@@ -54,7 +56,10 @@ reviewRoutes.get("/ops/reviews/resource/:id",async c => {
   const events = await db(c).prepare("SELECT action,actor_id,reason,created_at FROM ops_events WHERE resource_id=? ORDER BY created_at DESC,id LIMIT 30").bind(row.id).all<{action:string;actor_id:string;reason:string;created_at:string}>();
   const history = panel(t(v,["最近 30 条操作", "Last 30 changes"]),table(v,[["操作", "Action"],["操作人", "Actor"],["原因", "Reason"],["时间（UTC）", "Time (UTC)"]],events.results.map(event => [h(event.action),h(event.actor_id),h(event.reason),h(event.created_at)])));
   const saved = c.req.query("saved") === "1" ? `<div class="notice success" role="status">${h(t(v,["审核操作已保存，操作日志已同步记录。", "Review saved together with its audit record."]))}</div>` : "";
-  return c.html(page(v,`reviews-${row.kind}`,`${label(v,`reviews-${row.kind}`)} · ${row.name}`,saved+panel(t(v,["档案审核资料（只读）", "Record review details (read-only)"]),readinessHtml(v,row,context)+details,badge(v,row.status))+documents+decision+history,t(v,["通过前会检查必要资料、有效期及车队关系，不会自动开通账号或接单。", "Approval checks required documents, expiry and fleet relationships. It does not create an account or enable live jobs."]),link(`/ops/reviews/${row.kind}`,t(v,["← 返回审核列表", "← Back to reviews"]),"button-link")+link(`/ops/resource/${row.id}`,t(v,["查看 / 维护档案", "View / maintain record"]),"button-link")));
+  const content=saved+panel(t(v,["档案审核资料（只读）", "Record review details (read-only)"]),readinessHtml(v,row,context)+details,badge(v,row.status))+documents+decision+history;
+  // The driver list also contains a creation form: avoid duplicate label targets.
+  if(dialog)return c.html(`<section data-driver-review-fragment data-resource-id="${h(row.id)}"><h3>${h(row.name)}</h3>${content.replaceAll('id="reason"','id="driver-review-reason"').replaceAll('for="reason"','for="driver-review-reason"')}</section>`);
+  return c.html(page(v,`reviews-${row.kind}`,`${label(v,`reviews-${row.kind}`)} · ${row.name}`,content,t(v,["通过前会检查必要资料、有效期及车队关系，不会自动开通账号或接单。", "Approval checks required documents, expiry and fleet relationships. It does not create an account or enable live jobs."]),link(`/ops/reviews/${row.kind}`,t(v,["← 返回审核列表", "← Back to reviews"]),"button-link")+link(`/ops/resource/${row.id}`,t(v,["查看 / 维护档案", "View / maintain record"]),"button-link")));
 });
 
 // Keep the original POST endpoint for existing bookmarked forms; both use the
@@ -66,6 +71,7 @@ async function changeStatus(c: OpsContext) {
   if(action==="approve") { const data=await reviewContext(db(c),[row]);if(readiness({...row,status:"approved"},data.documents,data.configs,data.peers).length)throw new OpsError("REVIEW_NOT_READY"); }
   if(action==="submit" && !JSON.parse(row.data_json).authorized)throw new OpsError("REVIEW_NOT_READY");
   await mutate(db(c),c.get("revision"),actor(c),{action:`resource.${action}`,type:row.kind,id:row.id,reason:why,before:{status:row.status,version:row.version},after:{status:transition.to,version:row.version+1}},[{sql:`UPDATE ops_resources SET status=?,version=version+1,updated_at=? WHERE id=? AND ${guard}`,values:[transition.to,new Date().toISOString(),row.id]}]);
+  if(row.kind==="driver"&&action!=="submit"&&c.req.path.startsWith("/ops/reviews/")&&c.req.header("Accept")==="application/json")return c.json({saved:true,id:row.id});
   return c.redirect(action === "submit" ? `/ops/resource/${row.id}?saved=1` : `/ops/reviews/resource/${row.id}?saved=1`,303);
 }
 reviewRoutes.post("/ops/resource/:id/status",changeStatus);
