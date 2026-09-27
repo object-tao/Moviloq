@@ -34,14 +34,14 @@ async function settings(){return await(await publicRequest("/api/settings")).jso
 function booking(){const input=blankBooking();input.pickup.city="Frankfurt am Main";input.dropoffs[0].city="Berlin";input.cargo.description="Synthetic cargo";return input;}
 
 describe("system settings",()=>{
-  it("lists imported heavy reference types and notes without exposing them as quotable vehicle classes",async()=>{
-    const entries: {id:string;nameZh:string;notesZh:string;sortOrder:number}[]=JSON.parse(readFileSync(new URL("../data/vehicle-types-20260927.json",import.meta.url),"utf8"));
+  it("lists imported source records and exposes owner-confirmed heavy capacities as test-only quotable classes",async()=>{
+    const entries: {id:string;nameZh:string;notesZh:string;sortOrder:number;effectiveVolumeM3:number;capacityKg:number}[]=JSON.parse(readFileSync(new URL("../data/vehicle-types-20260927.json",import.meta.url),"utf8"));
     for(const entry of entries)db.sqlite.prepare("INSERT INTO ops_vehicle_type_catalog(id,name_zh,notes_zh,sort_order,source,created_at,updated_at) VALUES(?,?,?,?,?,'now','now')").run(entry.id,entry.nameZh,entry.notesZh,entry.sortOrder,"test-fixture");
-    const page=await(await get("/ops/settings/vehicles")).text();for(const entry of entries){expect(page).toContain(entry.nameZh);if(entry.notesZh)expect(page).toContain(entry.notesZh);}expect(page).toContain("资料车型 · 未开放估价");
+    const page=await(await get("/ops/settings/vehicles")).text();for(const entry of entries){expect(page).toContain(entry.nameZh);expect(page).toContain(`${entry.effectiveVolumeM3} m³`);if(entry.notesZh)expect(page).toContain(entry.notesZh);}expect(page).toContain("原始资料 · 已启用测试估价");
     const filtered=await(await get("/ops/settings/vehicles?q=120&state=reference")).text();expect(filtered).toContain("120立方车5轴");expect(filtered).not.toContain("130立方车");
-    const publicVehicles=await(await publicRequest("/api/vehicles")).json() as {vehicles:{id:string}[];references:{id:string;nameZh:string;notesZh:string}[]};expect(publicVehicles.vehicles).toHaveLength(6);expect(publicVehicles.vehicles.some(vehicle=>vehicle.id.startsWith("heavy-"))).toBe(false);
-    expect(publicVehicles.references).toHaveLength(10);for(const entry of entries)expect(publicVehicles.references).toContainEqual(expect.objectContaining({id:entry.id,nameZh:entry.nameZh,notesZh:entry.notesZh}));expect(publicVehicles.references[0]).not.toHaveProperty("capacityKg");expect(publicVehicles.references[0]).not.toHaveProperty("baseNet");
-    expect((await publicRequest("/api/quotes",{vehicleId:entries[0].id,distanceKm:18})).status).toBe(422);
+    const publicVehicles=await(await publicRequest("/api/vehicles")).json() as {vehicles:{id:string;capacityKg:number;effectiveVolumeM3?:number;pricingStatus?:string}[];references:unknown[]};expect(publicVehicles.vehicles).toHaveLength(16);expect(publicVehicles.references).toEqual([]);
+    for(const entry of entries)expect(publicVehicles.vehicles).toContainEqual(expect.objectContaining({id:entry.id,capacityKg:entry.capacityKg,effectiveVolumeM3:entry.effectiveVolumeM3,pricingStatus:"test-placeholder"}));
+    const quote=await publicRequest("/api/quotes",{vehicleId:entries[0].id,distanceKm:1800});expect(quote.status).toBe(200);expect(await quote.json()).toMatchObject({quote:{pricingStatus:"test-placeholder"}});
     signIn("operations");expect((await get("/ops/settings/vehicles")).status).toBe(200);signIn("reviewer");expect((await get("/ops/settings/vehicles")).status).toBe(403);
   });
   it("exposes only effective public settings and retains the defaults without a database",async()=>{
@@ -77,7 +77,7 @@ describe("system settings",()=>{
   it("does not activate scheduled parameter versions early and rejects invalid/unsafe inputs",async()=>{
     const id=await create("parameters","booking",{maxDropoffs:3});await publish(id,1,{effective_at:new Date(Date.now()+86400000).toISOString().slice(0,16)});expect((await settings()).parameters).toEqual(defaultParameters);
     expect(await(await get("/ops/configs?kind=parameters&status=published&q=Synthetic")).text()).toContain("等待生效");
-    for(const data of [{maxDropoffs:0},{maxDropoffs:21},{minScheduleMinutes:14},{maxScheduleDays:31},{quoteValidityMinutes:61},{maxDistanceKm:501},{minScheduleMinutes:1440,maxScheduleDays:1}])expect((await post("/ops/configs/create",{kind:"parameters",scope:"booking",title:"Invalid",...defaultParameters,...data})).status).toBe(422);
+    for(const data of [{maxDropoffs:0},{maxDropoffs:21},{minScheduleMinutes:14},{maxScheduleDays:31},{quoteValidityMinutes:61},{maxDistanceKm:15001},{minScheduleMinutes:1440,maxScheduleDays:1}])expect((await post("/ops/configs/create",{kind:"parameters",scope:"booking",title:"Invalid",...defaultParameters,...data})).status).toBe(422);
     for(const logoUrl of ["javascript:alert(1)","//untrusted.test/logo.svg","https://user:password@example.test/logo.svg","data:image/svg+xml,bad"])expect((await post("/ops/configs/create",{kind:"site",scope:"website",title:"Invalid",...defaultSite,logoUrl})).status).toBe(422);
   });
   it("supports country/city drafts, stable identifiers, disabled entries and unchanged historical drafts",async()=>{
@@ -104,7 +104,7 @@ describe("system settings",()=>{
     for(const hours of [1,49]){const bad={...input,serviceType:"scheduled" as const,scheduledAt:new Date(Date.now()+hours*3600000).toISOString()};expect(validSchedule(bad,Date.now(),current.parameters)).toBe(false);expect((await publicRequest("/api/drafts",{booking:bad})).status).toBe(422);}
     const valid={...input,serviceType:"scheduled" as const,scheduledAt:new Date(Date.now()+3*3600000).toISOString()};expect((await publicRequest("/api/drafts",{booking:valid})).status).toBe(201);
   });
-  it("keeps the six vehicle identifiers while publishing metadata/capacity and disabling new use only",async()=>{
+  it("keeps stable vehicle identifiers while publishing metadata/capacity and disabling new use only",async()=>{
     const id=await create("vehicle","transporter",{nameZh:"测试厢式车",nameEn:"Test van",descriptionEn:"Synthetic description",sortOrder:0,capacityKg:30});expect(configuredVehicles(await publishedConfigs(db.db)).transporter.capacityKg).not.toBe(30);await publish(id);
     expect(configuredVehicles(await publishedConfigs(db.db)).transporter).toMatchObject({nameEn:"Test van",capacityKg:30,sortOrder:0});
     const input=booking();input.cargo.totalWeightKg=31;expect((await publicRequest("/api/drafts",{booking:input})).status).toBe(422);

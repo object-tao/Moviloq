@@ -45,6 +45,6 @@ try{
     if(applying&&pending.length){const {batch}=importBatch(rows[1].results[0].revision,pending);const applied=await query(batch);assert.equal(applied[0].meta.changes,1,'Concurrent update: no import performed. Recheck first.');assert(applied.every(row=>row.meta.changes===1),'Unexpected import counts. Inspect before retrying.');}
     const after=await query([{sql:'SELECT id,name_zh,notes_zh,source,status,sort_order FROM ops_vehicle_type_catalog'},{sql:"SELECT count(*) n FROM ops_configs WHERE kind IN ('vehicle','pricing')"}]);
     if(applying)assert.equal(pendingRecords(after[0].results).length,0,'Verification failed.');assert.equal(after[1].results[0].n,configurationCount,'Pricing/vehicle config count changed during import. Inspect current state.');
-    console.log(JSON.stringify({environment:remote?'production':'local',inserted:applying?pending.length:0,pending:applying?0:pending.length,records:after[0].results.filter(row=>records.some(item=>item.id===row.id)).map(({id,name_zh,notes_zh,status})=>({id,name:name_zh,notes:notes_zh,status})),automaticPricingEnabled:false}));
+    console.log(JSON.stringify({environment:remote?'production':'local',inserted:applying?pending.length:0,pending:applying?0:pending.length,records:after[0].results.filter(row=>records.some(item=>item.id===row.id)).map(({id,name_zh,notes_zh,status})=>({id,name:name_zh,notes:notes_zh,status})),automaticPricingSourceReady:true,pricingMode:'test-placeholder'}));
   }
 }finally{local?.close();}

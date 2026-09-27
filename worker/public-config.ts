@@ -1,4 +1,4 @@
-import { calculateQuote, vehicles, type QuoteRequest, type VehicleReference } from "../shared/pricing";
+import { calculateQuote, vehicleIds, vehicles, type QuoteRequest, type VehicleReference } from "../shared/pricing";
 import { configSchemas, liveConfigs, type ConfigRow } from "../shared/operations";
 import { bookingCountries, type Country } from "../shared/locations";
 import { defaultParameters, defaultSite, type PublicSettings } from "../shared/settings";
@@ -26,7 +26,7 @@ export async function publishedVehicleReferences(db?: D1Database): Promise<Vehic
     FROM ops_vehicle_type_catalog WHERE status='reference' ORDER BY sort_order,id`).all<{
       id: string; name_zh: string; name_en: string | null; notes_zh: string; notes_en: string | null;
     }>();
-  return rows.results.map(row => ({ id: row.id, nameZh: row.name_zh, nameEn: row.name_en, notesZh: row.notes_zh, notesEn: row.notes_en }));
+  return rows.results.filter(row=>!vehicleIds.includes(row.id as typeof vehicleIds[number])).map(row => ({ id: row.id, nameZh: row.name_zh, nameEn: row.name_en, notesZh: row.notes_zh, notesEn: row.notes_en }));
 }
 export function configuredSettings(configs: Map<string, ConfigRow>): PublicSettings {
   const site = configs.get("site:website"); const parameters = configs.get("parameters:booking");

@@ -1254,6 +1254,17 @@ select:focus {
   line-height: 1.35;
 }
 
+.vehicle-option .test-price-label {
+  width: fit-content;
+  margin-top: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fff0e8;
+  color: #a94a2d;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .radio-dot {
   display: block;
   width: 17px;
@@ -2096,6 +2107,7 @@ button:disabled { opacity: .5; }
 .location-note { margin-bottom: 18px; }
 .add-stop { margin: 4px 0 20px; }
 .dimension-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+.cargo-capacity-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .simple-check { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; color: #526660; font-size: 13px; font-weight: 500; cursor: pointer; }
 .simple-check input, .vehicle-option input { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin: 2px 0 0; padding: 0; accent-color: var(--green); }
 .vehicle-option { grid-template-columns: 24px minmax(0, 1fr) 18px; gap: 10px; }
@@ -2109,6 +2121,7 @@ button:disabled { opacity: .5; }
 .consent-check a, .workspace-note a { color: var(--green); text-decoration: underline; }
 .form-alert, .form-success { padding: 14px 16px; margin-top: 18px; border-radius: 9px; font-size: 13px; }
 .form-alert { background: #fff0ea; color: #963a2c; }
+.test-price-alert { margin: 0 0 18px; line-height: 1.55; }
 .form-success { background: #e9f3e9; color: #275b3d; }
 .drafts-page { min-height: 65vh; padding: 65px 0 90px; background: #f7f8f3; }
 .drafts-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
@@ -2147,6 +2160,7 @@ button:disabled { opacity: .5; }
   .booking-layout { grid-template-columns: minmax(0, 1fr); }
   .stop-card { padding: 13px; }
   .dimension-fields { gap: 8px; }
+  .cargo-capacity-fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .dimension-fields input { padding: 0 10px; }
   .draft-card { padding: 20px; }
   .stop-controls .inline-button { min-height: 40px; min-width: 40px; }
