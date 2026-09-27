@@ -2,10 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useLanguage } from "../lib/i18n";
 import { ArrowIcon, CloseIcon, MenuIcon } from "./Icons";
+import { useSettings } from "../lib/settings";
 import { Logo } from "./Logo";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { language, setLanguage, t } = useLanguage();
+  const {site}=useSettings();
+  useEffect(()=>{document.title=`${site.name} · ${language==="zh"?"运输服务":"Delivery services"}`;},[site.name,language]);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
@@ -55,11 +58,11 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="container footer-grid">
           <div>
             <Logo inverse />
-            <p className="footer-intro">Local logistics, coordinated with clarity.</p>
+            <p className="footer-intro">{language==="zh"?site.introductionZh:site.introductionEn}</p>
             <span className="pilot-chip">{t.common.beta}</span>
           </div>
           <div>
-            <h3>Moviloq</h3>
+            <h3>{site.name}</h3>
             <Link to="/personal">{t.nav.personal}</Link>
             <Link to="/business">{t.nav.business}</Link>
             <Link to="/partners">{t.nav.partner}</Link>
@@ -69,7 +72,8 @@ export function Layout({ children }: { children: ReactNode }) {
             <Link to="/track">{t.nav.track}</Link>
             <Link to="/drafts">{language === "zh" ? "我的草稿" : "My drafts"}</Link>
             <Link to="/help">Help centre</Link>
-            <a href="mailto:hello@moviloq.com">hello@moviloq.com</a>
+            <a href={`mailto:${site.email}`}>{site.email}</a>
+            {site.phone && <a href={`tel:${site.phone.replace(/[ ()-]/g,"")}`}>{site.phone}</a>}
           </div>
           <div>
             <h3>Legal</h3>
@@ -79,7 +83,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="container footer-bottom">
-          <span>© {new Date().getFullYear()} Moviloq</span>
+          <span>© {new Date().getFullYear()} {site.name}</span>
           <span>Frankfurt am Main, Germany</span>
         </div>
       </footer>

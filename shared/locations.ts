@@ -1,6 +1,6 @@
 // A curated planning catalogue, not a declaration of operational service coverage.
 // Persist stable English city names and ISO country codes, never translated labels.
-type Country = { code: string; en: string; zh: string; cities: readonly (readonly [string, string])[] };
+export type Country = { code: string; en: string; zh: string; enabled?: boolean; sortOrder?: number; disabledCities?: readonly string[]; cities: readonly (readonly [string, string, string?])[] };
 export const bookingCountries: readonly Country[] = [
   { code: "DE", en: "Germany", zh: "德国", cities: [["Frankfurt am Main", "法兰克福（美因河畔）"], ["Berlin", "柏林"], ["Hamburg", "汉堡"], ["Munich", "慕尼黑"], ["Cologne", "科隆"], ["Dusseldorf", "杜塞尔多夫"], ["Stuttgart", "斯图加特"], ["Leipzig", "莱比锡"], ["Nuremberg", "纽伦堡"], ["Dresden", "德累斯顿"], ["Bremen", "不来梅"], ["Dortmund", "多特蒙德"]] },
   { code: "PL", en: "Poland", zh: "波兰", cities: [["Warsaw", "华沙"], ["Krakow", "克拉科夫"], ["Wroclaw", "弗罗茨瓦夫"], ["Poznan", "波兹南"], ["Gdansk", "格但斯克"], ["Lodz", "罗兹"]] },
@@ -16,11 +16,14 @@ export const bookingCountries: readonly Country[] = [
   { code: "DK", en: "Denmark", zh: "丹麦", cities: [["Copenhagen", "哥本哈根"], ["Aarhus", "奥胡斯"], ["Odense", "欧登塞"]] }
 ];
 
-export const bookingCountry = (code: string) => bookingCountries.find(country => country.code === code);
-export const validBookingCity = (countryCode: string, city: string) => bookingCountry(countryCode)?.cities.some(([name]) => name === city) ?? false;
+export const bookingCountry = (code: string, countries = bookingCountries) => countries.find(country => country.code === code);
+export const validBookingCity = (countryCode: string, city: string, countries = bookingCountries) => {
+  const country = bookingCountry(countryCode, countries);
+  return !!country && country.enabled !== false && !country.disabledCities?.includes(city) && country.cities.some(([name]) => name === city);
+};
 
-export function formatStopLocation(stop: { countryCode?: string; city?: string; address?: string }, language: "en" | "zh") {
-  const country = bookingCountry(stop.countryCode ?? "");
+export function formatStopLocation(stop: { countryCode?: string; city?: string; address?: string }, language: "en" | "zh", countries = bookingCountries) {
+  const country = bookingCountry(stop.countryCode ?? "", countries);
   const city = country?.cities.find(([name]) => name === stop.city);
-  return [country?.[language], city ? city[language === "zh" ? 1 : 0] : stop.city, stop.address].filter(Boolean).join(" · ");
+  return [country?.[language] ?? stop.countryCode, city ? language === "zh" ? city[1] : city[2] ?? city[0] : stop.city, stop.address].filter(Boolean).join(" · ");
 }

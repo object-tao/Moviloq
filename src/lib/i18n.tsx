@@ -1,4 +1,6 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useContext, useCallback, useEffect, useMemo, useState } from "react";
+
+import { useSettings } from "./settings";
 
 export type Language = "en" | "zh";
 
@@ -62,26 +64,16 @@ type LanguageContextValue = {
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState<Language>(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem("moviloq-language") : null;
-    if (stored === "en" || stored === "zh") {
-      return stored;
-    }
-    if (typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("zh")) {
-      return "zh";
-    }
-    return "en";
+  const {site,ready}=useSettings();
+  const [choice,setChoice]=useState<Language|null>(()=>{
+    try { const stored=window.localStorage.getItem("moviloq-language"); return stored==="en"||stored==="zh"?stored:null; } catch {return null;}
   });
-
-  useEffect(() => {
-    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-    window.localStorage.setItem("moviloq-language", language);
-  }, [language]);
-
-  const value = useMemo(
-    () => ({ language, setLanguage, t: messages[language] }),
-    [language]
-  );
+  const language=choice??site.defaultLanguage;
+  const setLanguage=useCallback((next:Language)=>{
+    setChoice(next);try{window.localStorage.setItem("moviloq-language",next);}catch{/* Storage may be disabled. */}
+  },[]);
+  useEffect(()=>{document.documentElement.lang=language==="zh"?"zh-CN":"en";},[language,ready]);
+  const value=useMemo(()=>({language,setLanguage,t:messages[language]}),[language,setLanguage]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }

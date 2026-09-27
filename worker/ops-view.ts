@@ -8,6 +8,7 @@ export const labels: Record<string, Label> = {
   fleet: ["合作车队", "Fleets"], driver: ["司机", "Drivers"], vehicle: ["车辆 / 车型", "Vehicles / classes"],
   "fleet-list": ["车队列表", "Fleet list"], "driver-list": ["司机列表", "Driver list"], "vehicle-list": ["车辆列表", "Vehicle list"],
   "reviews-fleet": ["车队审核", "Fleet reviews"], "reviews-driver": ["司机审核", "Driver reviews"], "reviews-vehicle": ["车辆审核", "Vehicle reviews"],
+  site: ["网站设置", "Website settings"], parameters: ["业务参数", "Business parameters"], country: ["国家", "Country"], city: ["城市", "City"],
   region: ["服务区域", "Service area"], pricing: ["价格规则", "Pricing"], requirements: ["审核清单", "Review policies"], content: ["内容与公告", "Content"],
   owner: ["管理员", "Owner"], operations: ["运营", "Operations"], reviewer: ["审核员", "Reviewer"],
   draft: ["草稿", "Draft"], submitted: ["待审核", "Awaiting review"], needs_info: ["待补件", "Needs information"], approved: ["审核通过", "Approved"], rejected: ["已拒绝", "Rejected"], suspended: ["已暂停", "Suspended"], published: ["已发布", "Published"], active: ["启用", "Active"], disabled: ["停用", "Disabled"],
@@ -57,9 +58,16 @@ function navigation(v: View, section: string) {
       group("vehicle", ["车辆管理", "Vehicle management"], [["vehicle", "/ops/resources/vehicle", labels["vehicle-list"]]]),
       group("reviews", ["审核管理", "Review management"], [["reviews", "/ops/reviews", ["审核总览", "Review overview"]], ...(["fleet", "driver", "vehicle"] as const).map(kind => [`reviews-${kind}`, `/ops/reviews/${kind}`, labels[`reviews-${kind}`]] as Item)]));
   }
-  if (can(v.role, "config:read")) groups.push(entry(["configs", "/ops/configs", ["服务与规则", "Service & rules"]]), entry(["content", "/ops/configs?kind=content", ["内容与公告", "Content"]]));
-  if (can(v.role, "staff:write")) groups.push(entry(["staff", "/ops/staff", ["员工与权限", "Staff & access"]]));
-  if (can(v.role, "audit:read")) groups.push(entry(["audit", "/ops/audit", ["操作日志", "Audit log"]]));
+  const settings: Item[] = [];
+  if (can(v.role, "config:read")) {
+    if(v.role==="owner") settings.push(["settings-site", "/ops/configs?kind=site", labels.site]);
+    settings.push(["settings-locations", "/ops/settings/locations", ["国家与城市", "Countries & cities"]], ["settings-region", "/ops/configs?kind=region", labels.region], ["settings-vehicle", "/ops/settings/vehicles", ["车型设置", "Vehicle classes"]], ["settings-pricing", "/ops/configs?kind=pricing", ["价格与费用", "Pricing & fees"]]);
+    if(v.role==="owner") settings.push(["settings-parameters", "/ops/configs?kind=parameters", labels.parameters]);
+    settings.push(["settings-requirements", "/ops/configs?kind=requirements", ["审核规则", "Review rules"]], ["settings-content", "/ops/configs?kind=content", labels.content]);
+  }
+  if (can(v.role, "staff:write")) settings.push(["staff", "/ops/staff", ["员工与权限", "Staff & access"]]);
+  if (can(v.role, "audit:read")) settings.push(["audit", "/ops/audit", ["操作日志", "Audit log"]]);
+  if (settings.length) groups.push(group("settings", ["系统设置", "System settings"], settings));
   return groups.join("");
 }
 export function page(v: View, section: string, title: string, content: string, description = "", actions = "") {

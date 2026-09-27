@@ -13,6 +13,7 @@ export const vehicleIds = [
 export type VehicleId = (typeof vehicleIds)[number];
 
 export type VehicleDefinition = {
+  nameZh?: string; nameEn?: string; descriptionZh?: string; descriptionEn?: string; sortOrder?: number;
   id: VehicleId;
   capacityKg: number;
   cargoSizeCm: [number, number, number];

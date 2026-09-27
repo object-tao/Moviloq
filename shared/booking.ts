@@ -1,23 +1,25 @@
 import { z } from "zod";
 import { vehicles, vehicleIds, type QuoteEstimate, type QuoteRequest } from "./pricing";
-import { bookingCountry, validBookingCity } from "./locations";
+import { defaultParameters, type BookingParameters } from "./settings";
+import { bookingCountries, bookingCountry, validBookingCity, type Country } from "./locations";
 
-export const stopSchema = z.object({
-  countryCode: z.string().trim().length(2).refine(code => !!bookingCountry(code), "INVALID_COUNTRY"),
+function createStopSchema(countries: readonly Country[]) { return z.object({
+  countryCode: z.string().trim().length(2).refine(code => !!bookingCountry(code,countries) && bookingCountry(code,countries)?.enabled !== false, "INVALID_COUNTRY"),
   city: z.string().trim().min(1).max(80),
   address: z.string().trim().max(240).default(""),
   contactName: z.string().trim().max(80).default(""),
   phone: z.string().trim().max(30).regex(/^[+\d ()-]*$/).default(""),
   notes: z.string().trim().max(400).default("")
 }).superRefine((stop, context) => {
-  if (!validBookingCity(stop.countryCode, stop.city)) context.addIssue({ code: "custom", path: ["city"], message: "INVALID_CITY" });
-});
+  if (!validBookingCity(stop.countryCode, stop.city,countries)) context.addIssue({ code: "custom", path: ["city"], message: "INVALID_CITY" });
+}); }
+export const stopSchema = createStopSchema(bookingCountries);
 
-export function createBookingSchema(catalog: typeof vehicles = vehicles) { return z.object({
-  pickup: stopSchema,
-  dropoffs: z.array(stopSchema).min(1).max(20),
+export function createBookingSchema(catalog: typeof vehicles = vehicles, countries: readonly Country[] = bookingCountries, parameters: BookingParameters = defaultParameters) { const locationSchema = createStopSchema(countries); return z.object({
+  pickup: locationSchema,
+  dropoffs: z.array(locationSchema).min(1).max(parameters.maxDropoffs),
   vehicleId: z.enum(vehicleIds),
-  distanceKm: z.number().min(1).max(500),
+  distanceKm: z.number().min(1).max(parameters.maxDistanceKm),
   serviceType: z.enum(["on-demand", "scheduled"]),
   scheduledAt: z.string().datetime().nullable(),
   cargo: z.object({
@@ -86,10 +88,10 @@ export function quoteInput(booking: BookingInput): QuoteRequest {
   };
 }
 
-export function validSchedule(booking: BookingInput, now = Date.now()) {
+export function validSchedule(booking: BookingInput, now = Date.now(), parameters: BookingParameters = defaultParameters) {
   if (booking.serviceType === "on-demand") return true;
   const time = Date.parse(booking.scheduledAt ?? "");
-  return time >= now + 15 * 60_000 && time <= now + 30 * 86_400_000;
+  return time >= now + parameters.minScheduleMinutes * 60_000 && time <= now + parameters.maxScheduleDays * 86_400_000;
 }
 
 export function blankStop(): BookingStop {

@@ -5,6 +5,7 @@ import { roles, can, type ResourceRow, type Role } from "../shared/operations";
 import { equalToken, token } from "./admin-auth";
 import { resourceRoutes } from "./ops-resources";
 import { documentRoutes } from "./ops-documents";
+import { settingsRoutes } from "./ops-settings";
 import { configRoutes } from "./ops-configs";
 import { staffRoutes } from "./ops-staff";
 import { reviewRoutes } from "./ops-reviews";
@@ -61,7 +62,7 @@ operations.get("/ops/audit",async c=>{
   const staff=await c.env.ADMIN_DB!.prepare("SELECT * FROM admin_staff_events ORDER BY created_at DESC LIMIT 25").all<{created_at:string;actor_id:string;target_id:string;action:string;reason:string;changes_json:string}>();
   return c.html(page(v,"audit",t(v,["操作日志", "Audit log"]),panel(t(v,["业务审计（只读）", "Business audit (read-only)"]),events+pagination(v,"/ops/audit",num,rows.results.length>25))+panel(t(v,["最近 25 条员工权限变更", "Last 25 staff access changes"]),table(v,[["时间 / 操作人", "Time / actor"],["操作 / 对象", "Action / target"],["原因与变更", "Reason and changes"]],staff.results.map(row=>[`${h(row.created_at)}<br>${h(row.actor_id)}`,`${h(row.action)}<br>${h(row.target_id)}`,`${h(row.reason)}<pre class="audit-json">${h(row.changes_json)}</pre>`]))),t(v,["包含资料、审核、配对、规则发布、员工权限及私密文件访问。不提供修改或删除日志功能。", "Records edits, reviews, pairing, publication, staff access changes and private file access. Logs cannot be edited or deleted here."])));
 });
-operations.route("/",resourceRoutes);operations.route("/",documentRoutes);operations.route("/",reviewRoutes);operations.route("/",configRoutes);operations.route("/",staffRoutes);
+operations.route("/",resourceRoutes);operations.route("/",documentRoutes);operations.route("/",reviewRoutes);operations.route("/",configRoutes);operations.route("/",settingsRoutes);operations.route("/",staffRoutes);
 operations.onError((error,c)=>{
   const isConstraint=error.message.includes("UNIQUE constraint failed");const known=error instanceof OpsError || error instanceof ZodError || isConstraint;
   const code=error instanceof OpsError?error.code:isConstraint?"DUPLICATE_RECORD":error instanceof ZodError?"INVALID_INPUT":"OPERATIONS_UNAVAILABLE";

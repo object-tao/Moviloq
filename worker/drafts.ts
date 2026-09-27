@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { createBookingSchema, quoteInput, restoreBookingLocations, validSchedule, type SavedDraft } from "../shared/booking";
-import { publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
+import { configuredSettings, publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
 
 export type DraftBindings = { DB?: D1Database; DRAFT_LIMITER?: RateLimit; ENVIRONMENT?: string };
 type Variables = { sessionHash: string | null; expiresAt: string | null };
@@ -75,9 +75,10 @@ drafts.on(["POST", "PUT"], ["/", "/:id"], async (c) => {
   const updating = c.req.method === "PUT";
   if ((updating && !c.req.param("id")) || (!updating && c.req.param("id"))) return c.json({ error: "NOT_FOUND" }, 404);
   const configs = await publishedConfigs(c.env.DB);
-  const parsed = z.object({ booking: createBookingSchema(configuredVehicles(configs)), version: z.number().int().positive().optional() }).safeParse(await c.req.json().catch(() => null));
+  const settings = configuredSettings(configs);
+  const parsed = z.object({ booking: createBookingSchema(configuredVehicles(configs),settings.countries,settings.parameters), version: z.number().int().positive().optional() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "INVALID_BOOKING", issues: parsed.error.issues }, 422);
-  if (!validSchedule(parsed.data.booking)) return c.json({ error: "INVALID_SCHEDULE" }, 422);
+  if (!validSchedule(parsed.data.booking,Date.now(),settings.parameters)) return c.json({ error: "INVALID_SCHEDULE" }, 422);
   if (updating && (!uuid.safeParse(c.req.param("id")).success || !parsed.data.version)) return c.json({ error: "INVALID_VERSION" }, 422);
   const idempotencyKey = c.req.header("Idempotency-Key");
   if (!updating && !uuid.safeParse(idempotencyKey).success) return c.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, 422);
@@ -96,7 +97,7 @@ drafts.on(["POST", "PUT"], ["/", "/:id"], async (c) => {
   let estimate;
   try { estimate = quoteWithConfig(quoteInput(parsed.data.booking), configs); }
   catch (error) {
-    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE"].includes(error.message)) return c.json({ error: error.message }, 422);
+    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE", "BOOKING_LIMIT_EXCEEDED"].includes(error.message)) return c.json({ error: error.message }, 422);
     throw error;
   }
   const estimateJson = JSON.stringify(estimate);

@@ -8,6 +8,8 @@ Administration has a separate endpoint at [admin.moviloq.com](https://admin.movi
 
 ## What is implemented
 
+The admin now groups ten modules under **System settings**, including versioned website branding, country/city catalogues, six vehicle classes and bounded booking parameters. See [system settings](docs/system-settings.md) for permissions, publishing, migration and limits. This feature does not change existing account credentials or password-change flags.
+
 - original, responsive English/Chinese marketing experience;
 - personal, business, partner, tracking, account and legal placeholders;
 - bilingual multi-stop delivery planning with cargo, vehicle capacity and schedule validation;

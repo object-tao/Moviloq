@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { quoteRequestSchema } from "../shared/pricing";
-import { publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
+import { configuredSettings, publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
 import { drafts, expireDrafts, type DraftBindings } from "./drafts";
 
 type Bindings = DraftBindings;
@@ -22,6 +22,7 @@ app.get("/api/health", async (context) => {
   });
 });
 
+app.get("/api/settings", async c => { c.header("Cache-Control","no-store"); return c.json(configuredSettings(await publishedConfigs(c.env?.DB))); });
 app.get("/api/vehicles", async c => c.json({ vehicles: Object.values(configuredVehicles(await publishedConfigs(c.env?.DB))) }));
 app.get("/api/content", async c => {
   const configs = await publishedConfigs(c.env?.DB);
@@ -45,7 +46,7 @@ app.post("/api/quotes", async (context) => {
 
   try { return context.json({ quote: quoteWithConfig(parsed.data, await publishedConfigs(context.env?.DB)) }); }
   catch (error) {
-    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE"].includes(error.message)) return context.json({ error: error.message }, 422);
+    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE", "BOOKING_LIMIT_EXCEEDED"].includes(error.message)) return context.json({ error: error.message }, 422);
     throw error;
   }
 });

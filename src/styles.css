@@ -2092,3 +2092,12 @@ button:disabled { opacity: .5; }
 }
 :root .published-content-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .published-help { display: grid; gap: 24px; padding-bottom: 60px; }
+
+/* Configurable branding must not push navigation outside narrow viewports. */
+.logo { min-width: 0; max-width: 220px; flex-shrink: 1; }
+.logo__word { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logo__mark, .logo > img, .header-actions { flex-shrink: 0; }
+.logo__image { width: 38px; height: 38px; object-fit: contain; }
+.footer-grid > div { min-width: 0; }
+.footer-grid a.logo { display: inline-flex; max-width: 100%; }
+.site-footer a, .site-footer h3, .footer-intro { overflow-wrap: anywhere; }

@@ -1,0 +1,12 @@
+[
+  {"id":"heavy-datongdao-5-axle","nameZh":"大通道5轴","notesZh":"22吨之内，如果车自重轻，可以23吨","sortOrder":200},
+  {"id":"heavy-datongdao-6-axle","nameZh":"大通道6轴","notesZh":"23吨以上就要用6轴的车","sortOrder":201},
+  {"id":"heavy-120m3-5-axle","nameZh":"120立方车5轴","notesZh":"22吨之内，如果车自重轻，可以23吨","sortOrder":202},
+  {"id":"heavy-120m3-6-axle","nameZh":"120立方车6轴","notesZh":"23吨以上就要用6轴的车","sortOrder":203},
+  {"id":"heavy-130m3","nameZh":"130立方车","notesZh":"几乎都是6轴的，5轴很少","sortOrder":204},
+  {"id":"heavy-140m3","nameZh":"140立方车","notesZh":"全是6轴的","sortOrder":205},
+  {"id":"heavy-flatbed-13m-5-axle","nameZh":"13米平板5轴","notesZh":"","sortOrder":206},
+  {"id":"heavy-flatbed-13m-6-axle","nameZh":"13米平板6轴","notesZh":"","sortOrder":207},
+  {"id":"heavy-flatbed-17m-5-axle","nameZh":"17米平板车5轴","notesZh":"","sortOrder":208},
+  {"id":"heavy-flatbed-17m-6-axle","nameZh":"17米平板车6轴","notesZh":"","sortOrder":209}
+]
