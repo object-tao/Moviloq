@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { blankBooking, bookingSchema, quoteInput, validSchedule } from "./booking";
+import { blankBooking, bookingSchema, quoteInput, restoreBookingLocations, validSchedule } from "./booking";
+import { bookingCountries, formatStopLocation, validBookingCity } from "./locations";
 import { calculateQuote, quoteRequestSchema } from "./pricing";
 
 function sample() {
   const booking = blankBooking();
+  booking.pickup.city = "Frankfurt am Main";
+  booking.dropoffs[0].city = "Berlin";
   booking.pickup.address = "Test pickup Frankfurt";
   booking.dropoffs[0].address = "Test destination Frankfurt";
   booking.cargo.description = "Test boxes";
@@ -11,6 +14,41 @@ function sample() {
 }
 
 describe("delivery draft validation", () => {
+  it("accepts city-only routes without a street address and preserves location fields", () => {
+    const booking = sample();
+    booking.pickup.address = "";
+    Object.assign(booking.dropoffs[0], { countryCode: "PL", city: "Warsaw", address: "" });
+    const parsed = bookingSchema.parse(booking);
+    expect(parsed.pickup).toMatchObject({ countryCode: "DE", city: "Frankfurt am Main", address: "" });
+    expect(parsed.dropoffs[0]).toMatchObject({ countryCode: "PL", city: "Warsaw", address: "" });
+  });
+  it("rejects missing, unknown and mismatched country/city pairs", () => {
+    for (const location of [{ countryCode: "", city: "" }, { countryCode: "DE", city: "" }, { countryCode: "XX", city: "Berlin" }, { countryCode: "PL", city: "Berlin" }, { countryCode: "DE", city: "<script>" }]) {
+      const booking = sample(); Object.assign(booking.pickup, location);
+      expect(bookingSchema.safeParse(booking).success).toBe(false);
+    }
+    const booking = sample(); booking.dropoffs[0].city = "Madrid";
+    expect(bookingSchema.safeParse(booking).success).toBe(false);
+  });
+  it("restores legacy address-only drafts without guessing locations or dropping data", () => {
+    const booking = sample();
+    const legacyStop = { address: "Legacy street and postcode", contactName: "Test", phone: "", notes: "Keep this" };
+    const restored = restoreBookingLocations({ ...booking, pickup: legacyStop, dropoffs: [legacyStop] });
+    expect(restored.pickup).toEqual({ ...legacyStop, countryCode: "", city: "" });
+    expect(restored.dropoffs[0]).toEqual(restored.pickup);
+    expect(bookingSchema.safeParse(restored).success).toBe(false);
+    expect(formatStopLocation(restored.pickup, "zh")).toBe(legacyStop.address);
+    expect(restoreBookingLocations(booking)).toEqual(booking);
+  });
+  it("uses stable city values and localized draft summaries", () => {
+    expect(new Set(bookingCountries.map(country => country.code)).size).toBe(bookingCountries.length);
+    for (const country of bookingCountries) {
+      expect(new Set(country.cities.map(([name]) => name)).size).toBe(country.cities.length);
+      for (const [city] of country.cities) expect(validBookingCity(country.code, city)).toBe(true);
+    }
+    expect(formatStopLocation({ countryCode: "ES", city: "Madrid", address: "" }, "zh")).toBe("西班牙 · 马德里");
+    expect(formatStopLocation({ countryCode: "PL", city: "Warsaw", address: "Sample street" }, "en")).toBe("Poland · Warsaw · Sample street");
+  });
   it("normalizes input and removes untrusted extra fields", () => {
     const booking = sample();
     booking.pickup.address = "  Test pickup  ";

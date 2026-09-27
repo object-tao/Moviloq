@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
-import { createBookingSchema, quoteInput, validSchedule, type SavedDraft } from "../shared/booking";
+import { createBookingSchema, quoteInput, restoreBookingLocations, validSchedule, type SavedDraft } from "../shared/booking";
 import { publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
 
 export type DraftBindings = { DB?: D1Database; DRAFT_LIMITER?: RateLimit; ENVIRONMENT?: string };
@@ -24,7 +24,7 @@ function cookieName(c: Context<DraftEnv>) {
 function serialize(row: DraftRow, expiresAt: string): SavedDraft {
   return {
     id: row.id, reference: row.reference, version: row.version,
-    booking: JSON.parse(row.request_json), estimate: JSON.parse(row.estimate_json),
+    booking: restoreBookingLocations(JSON.parse(row.request_json)), estimate: JSON.parse(row.estimate_json),
     createdAt: row.created_at, updatedAt: row.updated_at, expiresAt
   };
 }

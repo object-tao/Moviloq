@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { vehicles, vehicleIds, type QuoteEstimate, type QuoteRequest } from "./pricing";
+import { bookingCountry, validBookingCity } from "./locations";
 
 export const stopSchema = z.object({
-  address: z.string().trim().min(3).max(240),
+  countryCode: z.string().trim().length(2).refine(code => !!bookingCountry(code), "INVALID_COUNTRY"),
+  city: z.string().trim().min(1).max(80),
+  address: z.string().trim().max(240).default(""),
   contactName: z.string().trim().max(80).default(""),
   phone: z.string().trim().max(30).regex(/^[+\d ()-]*$/).default(""),
   notes: z.string().trim().max(400).default("")
+}).superRefine((stop, context) => {
+  if (!validBookingCity(stop.countryCode, stop.city)) context.addIssue({ code: "custom", path: ["city"], message: "INVALID_CITY" });
 });
 
 export function createBookingSchema(catalog: typeof vehicles = vehicles) { return z.object({
@@ -52,6 +57,15 @@ export const bookingSchema = createBookingSchema();
 
 export type BookingInput = z.infer<typeof bookingSchema>;
 export type BookingStop = BookingInput["pickup"];
+type StoredStop = Omit<BookingStop, "countryCode" | "city"> & Partial<Pick<BookingStop, "countryCode" | "city">>;
+type StoredBooking = Omit<BookingInput, "pickup" | "dropoffs"> & { pickup: StoredStop; dropoffs: StoredStop[] };
+
+// Read pre-location drafts without inventing a country/city or changing their address.
+// Saving them still requires the user to select valid locations through stopSchema.
+export function restoreBookingLocations(booking: StoredBooking): BookingInput {
+  const restore = (stop: StoredStop): BookingStop => ({ ...stop, countryCode: stop.countryCode ?? "", city: stop.city ?? "" });
+  return { ...booking, pickup: restore(booking.pickup), dropoffs: booking.dropoffs.map(restore) };
+}
 export type SavedDraft = {
   id: string;
   reference: string;
@@ -79,7 +93,7 @@ export function validSchedule(booking: BookingInput, now = Date.now()) {
 }
 
 export function blankStop(): BookingStop {
-  return { address: "", contactName: "", phone: "", notes: "" };
+  return { countryCode: "DE", city: "", address: "", contactName: "", phone: "", notes: "" };
 }
 
 export function blankBooking(): BookingInput {
