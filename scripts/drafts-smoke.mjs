@@ -5,9 +5,9 @@ const origin = new URL(process.argv[2] ?? "http://127.0.0.1:5173").origin;
 assert.ok(!["https://moviloq.com", "https://www.moviloq.com"].includes(origin), "Write smoke tests run only on local/preview environments.");
 let cookie = "";
 let current;
-const stop = (address) => ({ address, contactName: "", phone: "", notes: "" });
+const stop = (city, countryCode = "DE") => ({ countryCode, city, address: "", contactName: "", phone: "", notes: "" });
 const booking = {
-  pickup: stop("Test pickup Frankfurt"), dropoffs: [stop("Test destination one"), stop("Test destination two")],
+  pickup: stop("Frankfurt am Main"), dropoffs: [stop("Berlin"), stop("Warsaw", "PL")],
   vehicleId: "transporter", distanceKm: 18.3, serviceType: "on-demand", scheduledAt: null,
   cargo: { description: "Automated test boxes", quantity: 2, totalWeightKg: 20, lengthCm: 60, widthCm: 40, heightCm: 40, fragile: false },
   loadingHelp: false, helper: false, priority: true, notes: "Synthetic test only"
@@ -27,6 +27,9 @@ try {
   assert.equal(empty.headers.get("set-cookie"), null, "Browsing does not create a workspace");
   assert.equal((await api("", { method: "POST", body: { booking }, headers: { Origin: "https://untrusted.example" } })).status, 403);
   assert.equal((await api("", { method: "POST", body: { booking }, headers: { "Content-Type": "text/plain" } })).status, 415);
+  for (const pickup of [{ ...booking.pickup, countryCode: "" }, { ...booking.pickup, city: "" }, { ...booking.pickup, countryCode: "PL" }]) {
+    assert.equal((await api("", { method: "POST", body: { booking: { ...booking, pickup } }, headers: { "Idempotency-Key": crypto.randomUUID() } })).status, 422);
+  }
   const key = crypto.randomUUID();
   const create = () => api("", { method: "POST", body: { booking, estimate: { total: 0 } }, headers: { "Idempotency-Key": key } });
   const created = await create();
@@ -38,6 +41,8 @@ try {
   cookie = setCookie.split(";")[0];
   current = (await created.json()).draft;
   assert.equal(current.version, 1);
+  assert.deepEqual(current.booking.pickup, booking.pickup);
+  assert.deepEqual(current.booking.dropoffs, booking.dropoffs);
   assert.equal(current.estimate.breakdown.stops, 4.5, "Stops calculated by the server");
   assert.ok(current.estimate.total > 0, "Client-supplied pricing ignored");
   assert.ok(Date.parse(current.expiresAt) > Date.now() + 29 * 86400000);

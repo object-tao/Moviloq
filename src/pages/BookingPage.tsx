@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { blankBooking, blankStop, createBookingSchema, quoteInput, validSchedule, type BookingInput, type BookingStop } from "../../shared/booking";
 import { vehicles, type QuoteEstimate } from "../../shared/pricing";
+import { bookingCountries, bookingCountry } from "../../shared/locations";
 import { ArrowIcon, TruckIcon } from "../components/Icons";
 import { ApiError, getDraft, getVehicleCatalog, requestQuote, saveDraft } from "../lib/api";
 import { bookingCopy, bookingError } from "../lib/booking-copy";
@@ -99,22 +100,34 @@ export function BookingPage() {
 
   function stopFields(stop: BookingStop, index: number) {
     const pickup = index === -1;
+    const country = bookingCountry(stop.countryCode);
+    const fieldId = pickup ? "pickup" : `dropoff-${index}`;
     return <div className="stop-card" key={pickup ? "pickup" : index}>
       <div className="stop-card-heading"><strong><span className={pickup ? "stop-marker" : "stop-marker stop-marker--orange"}>{pickup ? "A" : index + 1}</span>{pickup ? t.pickup : `${t.dropoff} ${index + 1}`}</strong>
         {!pickup && booking.dropoffs.length > 1 && <div className="stop-controls"><button type="button" className="inline-button" disabled={index === 0} onClick={() => moveStop(index, -1)} aria-label={`${t.up} ${index + 1}`}>↑</button><button type="button" className="inline-button" disabled={index === booking.dropoffs.length - 1} onClick={() => moveStop(index, 1)} aria-label={`${t.down} ${index + 1}`}>↓</button><button type="button" className="inline-button danger" onClick={() => change({ ...booking, dropoffs: booking.dropoffs.filter((_, i) => i !== index) })}>{t.remove}</button></div>}
       </div>
-      <label>{t.address}<input required minLength={3} maxLength={240} autoComplete="off" placeholder={pickup ? "Frankfurt Airport, 60547 Frankfurt" : "Römerberg 26, 60311 Frankfurt"} value={stop.address} onChange={(e) => updateStop(index, { ...stop, address: e.target.value })} /></label>
+      <div className="two-column-fields stop-location-fields">
+        <div><label htmlFor={`${fieldId}-country`}>{t.country}</label><select id={`${fieldId}-country`} required value={stop.countryCode} onChange={(e) => updateStop(index, { ...stop, countryCode: e.target.value, city: "" })}>
+          <option value="">{t.selectCountry}</option>{bookingCountries.map(item => <option key={item.code} value={item.code}>{item[language]}</option>)}
+        </select></div>
+        <div><label htmlFor={`${fieldId}-city`}>{t.city}</label><select id={`${fieldId}-city`} required disabled={!country} value={stop.city} onChange={(e) => updateStop(index, { ...stop, city: e.target.value })}>
+          <option value="">{country ? t.selectCity : t.countryFirst}</option>{country?.cities.map(([value, nameZh]) => <option key={value} value={value}>{zh ? `${nameZh} / ${value}` : value}</option>)}
+        </select></div>
+      </div>
+      <details open={stop.address ? true : undefined}><summary>{t.addressDetails}</summary><label>{t.address}<input maxLength={240} autoComplete="off" placeholder={t.addressPlaceholder} value={stop.address} onChange={(e) => updateStop(index, { ...stop, address: e.target.value })} /></label></details>
       <details><summary>{t.contact} · {t.phone}</summary><div className="two-column-fields"><label>{t.contact}<input maxLength={80} value={stop.contactName} onChange={(e) => updateStop(index, { ...stop, contactName: e.target.value })} /></label><label>{t.phone}<input type="tel" maxLength={30} value={stop.phone} onChange={(e) => updateStop(index, { ...stop, phone: e.target.value })} /></label></div><label>{t.access}<input maxLength={400} value={stop.notes} onChange={(e) => updateStop(index, { ...stop, notes: e.target.value })} /></label></details>
     </div>;
   }
   const scheduledLocal = booking.scheduledAt ? new Date(Date.parse(booking.scheduledAt) - new Date(booking.scheduledAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
   const expired = estimate ? Date.parse(estimate.expiresAt) <= clock : false;
   return <section className="booking-page">
-    <div className="container booking-heading"><span className="kicker">Frankfurt / {reference || t.newDraft}</span><h1>{t.title}</h1><p>{t.subtitle}</p><Link className="text-cta" to="/drafts">{t.drafts}<ArrowIcon /></Link></div>
+    <div className="container booking-heading"><span className="kicker">Moviloq / {reference || t.newDraft}</span><h1>{t.title}</h1><p>{t.subtitle}</p><Link className="text-cta" to="/drafts">{t.drafts}<ArrowIcon /></Link></div>
     {loadingDraft ? <div className="container" role="status">{t.loadingDraft}</div> : loadError ? <div className="container form-alert" role="alert">{loadError} <Link to="/drafts">{t.drafts}</Link></div> : <div className="container booking-layout">
       <form className="booking-form booking-form--details" onSubmit={calculate}>
         <fieldset className="booking-fields" disabled={busy !== null}>
           <section className="form-section"><div className="form-section__heading"><span>1</span><div><h2>{t.route}</h2><p>{zh ? "一个提货点，最多 20 个送达点" : "One pickup. Up to 20 drop-offs."}</p></div></div>
+            <p className="field-note location-note">{t.locationNote}</p>
+            {[booking.pickup, ...booking.dropoffs].some(stop => stop.address && (!stop.countryCode || !stop.city)) && <p className="form-alert" role="status">{t.legacyLocation}</p>}
             {stopFields(booking.pickup, -1)}{booking.dropoffs.map((stop, index) => stopFields(stop, index))}
             <button className="button button--ghost button--small add-stop" type="button" disabled={booking.dropoffs.length >= 20} onClick={() => change({ ...booking, dropoffs: [...booking.dropoffs, blankStop()] })}>+ {t.addStop}</button>
             <label>{t.distance}<input required type="number" min={1} max={500} step="0.1" value={booking.distanceKm || ""} onChange={(e) => change({ ...booking, distanceKm: Number(e.target.value) })} /></label><p className="field-note">{t.mapNote}</p>

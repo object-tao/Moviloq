@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { SavedDraft } from "../../shared/booking";
+import { formatStopLocation } from "../../shared/locations";
 import { ApiError, deleteDraft, listDrafts } from "../lib/api";
 import { bookingCopy, bookingError } from "../lib/booking-copy";
 import { useLanguage } from "../lib/i18n";
@@ -40,8 +41,8 @@ export function DraftsPage() {
       {drafts.map((draft) => <article className="draft-card" key={draft.id}>
         <div className="draft-card-top"><span className="estimate-badge">{t.draftLabel}</span><span>{draft.reference}</span></div>
         <h2>{draft.booking.cargo.description}</h2>
-        <div className="draft-address"><span>A</span><p>{draft.booking.pickup.address}</p></div>
-        <div className="draft-address"><span>B</span><p>{draft.booking.dropoffs.map((stop) => stop.address).join(" → ")}</p></div>
+        <div className="draft-address"><span>A</span><p>{formatStopLocation(draft.booking.pickup, language)}</p></div>
+        <div className="draft-address"><span>B</span><p>{draft.booking.dropoffs.map((stop) => formatStopLocation(stop, language)).join(" → ")}</p></div>
         <div className="draft-meta"><strong>{formatEuro(draft.estimate.total, language)}</strong><span>{draft.booking.distanceKm} km · {draft.booking.dropoffs.length} {t.dropoff}</span></div>
         <p className="draft-dates">{t.updated}: {date(draft.updatedAt)}<br />{t.expires}: {date(draft.expiresAt)}</p>
         {confirming === draft.id ? <div className="draft-delete-confirm"><p>{t.confirmDelete}</p><button className="inline-button danger" disabled={deleting !== null} onClick={() => void remove(draft)}>{deleting ? t.saving : t.delete}</button><button className="inline-button" onClick={() => setConfirming(null)}>{t.cancel}</button></div> : <div className="draft-actions"><Link to={`/book?draft=${draft.id}`} className="button button--ghost button--small">{t.edit}<ArrowIcon /></Link><button className="inline-button danger" onClick={() => setConfirming(draft.id)}>{t.delete}</button></div>}
