@@ -1,0 +1,58 @@
+{
+  "source": "owner-central-asia-test-locations-20260927-v1",
+  "countries": [
+    {
+      "code": "CN", "nameZh": "中国", "nameEn": "China", "sortOrder": 100,
+      "cities": [
+        {"value": "Khorgos", "nameZh": "霍尔果斯", "nameEn": "Khorgos", "sortOrder": 0},
+        {"value": "Alashankou", "nameZh": "阿拉山口", "nameEn": "Alashankou", "sortOrder": 1},
+        {"value": "Baktu", "nameZh": "巴克图", "nameEn": "Baktu", "sortOrder": 2}
+      ]
+    },
+    {
+      "code": "KZ", "nameZh": "哈萨克斯坦", "nameEn": "Kazakhstan", "sortOrder": 101,
+      "cities": [
+        {"value": "Almaty", "nameZh": "阿拉木图", "nameEn": "Almaty", "sortOrder": 0},
+        {"value": "Astana", "nameZh": "阿斯塔纳", "nameEn": "Astana", "sortOrder": 1},
+        {"value": "Karaganda", "nameZh": "卡拉干达", "nameEn": "Karaganda", "sortOrder": 2},
+        {"value": "Shymkent", "nameZh": "奇姆肯特", "nameEn": "Shymkent", "sortOrder": 3},
+        {"value": "Kostanay", "nameZh": "库斯塔奈", "nameEn": "Kostanay", "sortOrder": 4},
+        {"value": "Aktobe", "nameZh": "阿克托别", "nameEn": "Aktobe", "sortOrder": 5},
+        {"value": "Aktau", "nameZh": "阿克套", "nameEn": "Aktau", "sortOrder": 6},
+        {"value": "Atyrau", "nameZh": "阿特劳", "nameEn": "Atyrau", "sortOrder": 7},
+        {"value": "Taraz", "nameZh": "塔拉兹", "nameEn": "Taraz", "sortOrder": 8}
+      ]
+    },
+    {
+      "code": "UZ", "nameZh": "乌兹别克斯坦", "nameEn": "Uzbekistan", "sortOrder": 102,
+      "cities": [
+        {"value": "Tashkent", "nameZh": "塔什干", "nameEn": "Tashkent", "sortOrder": 0},
+        {"value": "Nukus", "nameZh": "努库斯", "nameEn": "Nukus", "sortOrder": 1},
+        {"value": "Samarkand", "nameZh": "撒马尔罕", "nameEn": "Samarkand", "sortOrder": 2},
+        {"value": "Bukhara", "nameZh": "布哈拉", "nameEn": "Bukhara", "sortOrder": 3},
+        {"value": "Navoi", "nameZh": "纳沃伊", "nameEn": "Navoi", "sortOrder": 4},
+        {"value": "Qarshi", "nameZh": "卡尔西", "nameEn": "Qarshi", "sortOrder": 5},
+        {"value": "Fergana", "nameZh": "费尔干纳", "nameEn": "Fergana", "sortOrder": 6},
+        {"value": "Kokand", "nameZh": "浩罕", "nameEn": "Kokand", "sortOrder": 7},
+        {"value": "Namangan", "nameZh": "纳曼干", "nameEn": "Namangan", "sortOrder": 8},
+        {"value": "Almalyk", "nameZh": "阿尔马雷克", "nameEn": "Almalyk", "sortOrder": 9}
+      ]
+    },
+    {
+      "code": "RU", "nameZh": "俄罗斯", "nameEn": "Russia", "sortOrder": 103,
+      "cities": [
+        {"value": "Moscow", "nameZh": "莫斯科", "nameEn": "Moscow", "sortOrder": 0},
+        {"value": "Minsk", "nameZh": "明斯克", "nameEn": "Minsk", "sortOrder": 1, "internalNote": "用户指定归属俄罗斯，待业务确认；明斯克通常归属白俄罗斯。"},
+        {"value": "Saint Petersburg", "nameZh": "圣彼得堡", "nameEn": "Saint Petersburg", "sortOrder": 2},
+        {"value": "Yekaterinburg", "nameZh": "叶卡捷琳堡", "nameEn": "Yekaterinburg", "sortOrder": 3}
+      ]
+    },
+    {
+      "code": "TJ", "nameZh": "塔吉克斯坦", "nameEn": "Tajikistan", "sortOrder": 104,
+      "cities": [
+        {"value": "Khujand", "nameZh": "苦盏", "nameEn": "Khujand", "sortOrder": 0},
+        {"value": "Dushanbe", "nameZh": "杜尚别", "nameEn": "Dushanbe", "sortOrder": 1}
+      ]
+    }
+  ]
+}
