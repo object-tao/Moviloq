@@ -22,6 +22,14 @@ export type VehicleDefinition = {
   perKmNet: number;
 };
 
+export type VehicleReference = {
+  id: string;
+  nameZh: string;
+  nameEn: string | null;
+  notesZh: string;
+  notesEn: string | null;
+};
+
 export const vehicles: Record<VehicleId, VehicleDefinition> = {
   bike: {
     id: "bike",

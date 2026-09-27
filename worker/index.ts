@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { quoteRequestSchema } from "../shared/pricing";
-import { configuredSettings, publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
+import { configuredSettings, publishedConfigs, configuredVehicles, publishedVehicleReferences, quoteWithConfig } from "./public-config";
 import { drafts, expireDrafts, type DraftBindings } from "./drafts";
 
 type Bindings = DraftBindings;
@@ -23,7 +23,11 @@ app.get("/api/health", async (context) => {
 });
 
 app.get("/api/settings", async c => { c.header("Cache-Control","no-store"); return c.json(configuredSettings(await publishedConfigs(c.env?.DB))); });
-app.get("/api/vehicles", async c => c.json({ vehicles: Object.values(configuredVehicles(await publishedConfigs(c.env?.DB))) }));
+app.get("/api/vehicles", async c => {
+  c.header("Cache-Control","no-store");
+  const [configs,references]=await Promise.all([publishedConfigs(c.env?.DB),publishedVehicleReferences(c.env?.DB)]);
+  return c.json({ vehicles: Object.values(configuredVehicles(configs)), references });
+});
 app.get("/api/content", async c => {
   const configs = await publishedConfigs(c.env?.DB);
   return c.json({ items: [...configs.values()].filter(row => row.kind === "content").map(row => ({ id: row.scope, ...JSON.parse(row.data_json) })).filter(item => item.enabled) });
