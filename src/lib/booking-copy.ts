@@ -1,3 +1,4 @@
+import { defaultParameters, type BookingParameters } from "../../shared/settings";
 import type { Language } from "./i18n";
 
 const en = {
@@ -68,8 +69,8 @@ const zh: typeof en = {
 };
 
 export const bookingCopy = (language: Language) => language === "zh" ? zh : en;
-export function bookingError(code: string, language: Language) {
+export function bookingError(code: string, language: Language, parameters: BookingParameters = defaultParameters) {
   const t = bookingCopy(language);
-  const messages: Record<string, string> = { VERSION_CONFLICT: t.conflict, IDEMPOTENCY_CONFLICT: t.conflict, DRAFT_NOT_FOUND: t.missing, DRAFT_LIMIT_REACHED: t.limit, RATE_LIMITED: t.rateLimited, STORAGE_UNAVAILABLE: t.serverOffline, INVALID_BOOKING: t.invalid, INVALID_SCHEDULE: t.invalidSchedule };
+  const messages: Record<string, string> = { VERSION_CONFLICT: t.conflict, IDEMPOTENCY_CONFLICT: t.conflict, DRAFT_NOT_FOUND: t.missing, DRAFT_LIMIT_REACHED: t.limit, RATE_LIMITED: t.rateLimited, STORAGE_UNAVAILABLE: t.serverOffline, INVALID_BOOKING: t.invalid, INVALID_SCHEDULE: language === "zh" ? `请选择提前 ${parameters.minScheduleMinutes} 分钟至 ${parameters.maxScheduleDays} 天内的提货时间；规则可能已更新，请刷新核对。` : `Schedule ${parameters.minScheduleMinutes} minutes to ${parameters.maxScheduleDays} days ahead. Rules may have changed; refresh to verify.`, BOOKING_LIMIT_EXCEEDED: language === "zh" ? "预约参数已更新，请刷新并核对里程及送达点数量后重试。" : "Booking limits changed. Refresh and check the distance and drop-off count." };
   return messages[code] ?? t.failed;
 }

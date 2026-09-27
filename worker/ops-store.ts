@@ -32,7 +32,7 @@ export async function getResource(db: D1Database, id: string) {
   return row;
 }
 export async function getConfig(db: D1Database, id: string) {
-  const row = await db.prepare("SELECT * FROM ops_configs WHERE id = ?").bind(id).first<ConfigRow>();
+  const row = await db.prepare("SELECT * FROM ops_all_configs WHERE id = ?").bind(id).first<ConfigRow>();
   if (!row) throw new OpsError("NOT_FOUND", 404);
   return row;
 }

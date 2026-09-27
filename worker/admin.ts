@@ -6,6 +6,7 @@ import { audit, cleanAuthData, consumeLimit, digest, equalToken, fingerprint, ge
 import { hashPassword, validNewPassword, verifyPassword } from "./admin-password";
 import { adminCss, loginHtml, passwordHtml, readyHtml, unavailableHtml } from "./admin-view";
 import { operations } from "./admin-ops";
+import { settingsDialogHash, settingsDialogCss } from "./ops-settings-dialog";
 import { opsCss, opsNavigationCss } from "./ops-view";
 import { resourceDialogHash, resourceDialogCss } from "./ops-resource-dialog";
 import { resourceReviewHash, resourceReviewCss } from "./ops-review-dialog";
@@ -31,6 +32,7 @@ export function createAdminApp() {
   const app = new Hono<AdminEnv>();
   app.use("*", (c,next)=>secureHeaders({ referrerPolicy: "same-origin", contentSecurityPolicy: {
     defaultSrc: ["'none'"], styleSrc: ["'self'"], imgSrc: ["'self'"], baseUri: ["'none'"], frameAncestors: ["'none'"], formAction: ["'self'"],
+    ...(c.req.method==="GET"&&["/ops/configs","/ops/settings/locations","/ops/settings/vehicles"].includes(c.req.path) ? {scriptSrc: [`'${settingsDialogHash}'`], connectSrc: ["'self'"]} : {}),
     ...(c.req.method==="GET"&&["/ops/resources/fleet","/ops/resources/driver","/ops/resources/vehicle"].includes(c.req.path) ? { scriptSrc: [`'${resourceDialogHash}'`,...(c.req.path!=="/ops/resources/fleet"?[`'${resourceReviewHash}'`]:[])], connectSrc: ["'self'"] } : {})
   } })(c,next));
   app.use("*", async (c, next) => {
@@ -43,7 +45,7 @@ export function createAdminApp() {
   });
   app.use("*", (c,next) => bodyLimit({ maxSize: /^\/ops\/resource\/[^/]+\/document$/.test(c.req.path) ? 600 * 1024 : c.req.path.startsWith("/ops/") ? 128 * 1024 : 8192, onError: c => c.json({ error: "REQUEST_TOO_LARGE" }, 413) })(c,next));
   app.get("/admin.css", c => c.body(adminCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
-  app.get("/ops.css", c => c.body(opsCss + opsNavigationCss + resourceDialogCss + resourceReviewCss + reviewGuidanceCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
+  app.get("/ops.css", c => c.body(opsCss + opsNavigationCss + resourceDialogCss + resourceReviewCss + reviewGuidanceCss + settingsDialogCss, 200, { "Content-Type": "text/css; charset=utf-8" }));
   app.get("/robots.txt", c => c.text("User-agent: *\nDisallow: /\n"));
   app.get("/favicon.ico", c => c.body(null, 204));
   app.get("/api/health", c => c.json({ service: "moviloq-admin", authentication: "password", configured: !!c.env.ADMIN_DB && /^[a-f0-9]{64}$/.test(c.env.ADMIN_AUTH_SECRET ?? ""), businessDataConnected: !!c.env.OPS_DB, businessOperationsEnabled: !!c.env.OPS_DB, liveOrdersEnabled: false, paymentsEnabled: false, release: "operations-phase-one" }));

@@ -8,6 +8,7 @@ import { Buffer } from "node:buffer";
 import { chromium } from "playwright-core";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { hashPassword } from "../worker/admin-password.ts";
+import { verifySettings } from "./settings-browser-scenarios.mjs";
 import { verifyVehicleDialogs } from "./vehicle-browser-scenarios.mjs";
 
 const destination=process.argv[2]??join(tmpdir(),"moviloq-operations-qa");
@@ -29,7 +30,7 @@ try {
   const errors=[];page.on("pageerror",error=>errors.push(error.message));
   await page.goto(origin+"/login");await page.locator("#username").fill("synthetic-owner");await page.locator("#password").fill(password);const signed=page.waitForResponse(response=>response.url()===origin+"/login"&&response.request().method()==="POST");await page.getByRole("button",{name:"登录 / Sign in"}).click();const signedResponse=await signed;assert.equal(signedResponse.status(),303,`Synthetic login: ${(await page.locator("body").innerText()).slice(0,500)}`);await page.waitForURL(origin+"/");
   assert.equal(await page.locator("h1").innerText(),"今天的运营工作台");
-  assert.equal(await page.locator('nav details.nav-group').count(),4);
+  assert.equal(await page.locator('nav details.nav-group').count(),5);
   for(const [kind,title]of [["fleet","合作车队"],["driver","司机管理"],["vehicle","车辆管理"],["reviews","审核管理"]]){
     const group=page.locator(`nav details[data-menu="${kind}"]`);assert.equal(await group.locator('summary').innerText(),title);
     await group.locator('summary').click();assert.equal(await group.getAttribute('open'),null);
@@ -38,6 +39,7 @@ try {
   await page.screenshot({path:join(destination,"operations-empty-desktop.png"),fullPage:true});
   const overview=await context.request.get(origin+"/api/admin/overview");assert.equal(overview.status(),200);assert.deepEqual((await overview.json()).resources,[]);
   await page.getByRole("link",{name:"English",exact:true}).click();await page.waitForURL(origin+"/");assert.equal(await page.locator("h1").innerText(),"Your operations workspace");
+  await verifySettings({page,db,origin,destination});
   // Create through the real modal, keeping server validation errors and values in place.
   await page.goto(origin+'/ops/resources/fleet');const addFleet=page.getByRole('link',{name:'Add fleet',exact:true});await addFleet.click();
   const dialog=page.getByRole('dialog',{name:'Add fleet',exact:true});assert(await dialog.isVisible());assert.equal(await page.locator(':focus').getAttribute('name'),'name');
