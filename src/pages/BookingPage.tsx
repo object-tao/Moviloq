@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { blankBooking, blankStop, createBookingSchema, quoteInput, validSchedule, type BookingInput, type BookingStop } from "../../shared/booking";
-import { vehicles, type QuoteEstimate } from "../../shared/pricing";
+import { vehicles, type QuoteEstimate, type VehicleReference } from "../../shared/pricing";
 import { bookingCountry } from "../../shared/locations";
 import { ArrowIcon, TruckIcon } from "../components/Icons";
 import { ApiError, getDraft, getVehicleCatalog, requestQuote, saveDraft } from "../lib/api";
@@ -34,10 +34,11 @@ export function BookingPage() {
   const [consent, setConsent] = useState(false);
   const [saved, setSaved] = useState(false);
   const [catalog, setCatalog] = useState(vehicles);
+  const [referenceCatalog, setReferenceCatalog] = useState<VehicleReference[]>([]);
   const [catalogReady, setCatalogReady] = useState(false);
   useEffect(() => {
     let active = true;
-    getVehicleCatalog().then(result => { if (active) { setCatalog(Object.fromEntries(result.vehicles.map(vehicle => [vehicle.id, vehicle])) as typeof vehicles); setCatalogReady(true); } }).catch(() => { if (active) setError(t.failed); });
+    getVehicleCatalog().then(result => { if (active) { setCatalog(Object.fromEntries(result.vehicles.map(vehicle => [vehicle.id, vehicle])) as typeof vehicles); setReferenceCatalog(result.references ?? []); setCatalogReady(true); } }).catch(() => { if (active) setError(t.failed); });
     return () => { active = false; };
   }, []);
   const idempotency = useRef(crypto.randomUUID());
@@ -143,7 +144,9 @@ export function BookingPage() {
           </section>
           <section className="form-section"><div className="form-section__heading"><span>3</span><div><h2>{t.vehicle}</h2></div></div><div className="vehicle-options">
             {Object.values(catalog).sort((a,b)=>(a.sortOrder??100)-(b.sortOrder??100)).map((vehicle) => <label key={vehicle.id} className={`vehicle-option ${booking.vehicleId === vehicle.id ? "selected" : ""}`}><TruckIcon size={24} /><span><strong>{(zh?vehicle.nameZh:vehicle.nameEn)||vehicleNames[vehicle.id][zh ? 1 : 0]}</strong><small>{vehicle.capacityKg.toLocaleString()} kg · {vehicle.cargoSizeCm.join(" × ")} cm</small>{(zh?vehicle.descriptionZh:vehicle.descriptionEn)&&<small>{zh?vehicle.descriptionZh:vehicle.descriptionEn}</small>}</span><input type="radio" name="vehicle" value={vehicle.id} checked={booking.vehicleId === vehicle.id} onChange={() => change({ ...booking, vehicleId: vehicle.id })} /></label>)}
-          </div></section>
+          </div>{referenceCatalog.length > 0 && <div className="vehicle-reference-section"><div className="vehicle-reference-heading"><h3>{t.heavyVehicleTitle}</h3><span>{t.manualQuote}</span></div><p>{t.heavyVehicleNote}</p><div className="vehicle-reference-grid">
+            {referenceCatalog.map(vehicle => <article className="vehicle-reference-card" key={vehicle.id}><TruckIcon size={24} /><div><strong>{(zh?vehicle.nameZh:vehicle.nameEn)||vehicle.nameZh}</strong>{((zh?vehicle.notesZh:vehicle.notesEn)||vehicle.notesZh) && <small>{(zh?vehicle.notesZh:vehicle.notesEn)||vehicle.notesZh}</small>}</div><span>{t.manualQuote}</span></article>)}
+          </div></div>}</section>
           <section className="form-section"><div className="form-section__heading"><span>4</span><div><h2>{t.when}</h2></div></div>
             <div className="schedule-options"><label className="simple-check"><input type="radio" name="serviceType" checked={booking.serviceType === "on-demand"} onChange={() => change({ ...booking, serviceType: "on-demand", scheduledAt: null })} />{t.immediate}</label><label className="simple-check"><input type="radio" name="serviceType" checked={booking.serviceType === "scheduled"} onChange={() => change({ ...booking, serviceType: "scheduled" })} />{t.scheduled}</label></div>
             {booking.serviceType === "scheduled" && <label>{t.schedule}<input type="datetime-local" required value={scheduledLocal} onChange={(e) => { const date = new Date(e.target.value); change({ ...booking, scheduledAt: Number.isFinite(date.getTime()) ? date.toISOString() : null }); }} /><p className="field-note">{zh?`提前 ${parameters.minScheduleMinutes} 分钟至 ${parameters.maxScheduleDays} 天；时间按当前浏览器时区显示：`:`Book ${parameters.minScheduleMinutes} minutes to ${parameters.maxScheduleDays} days ahead. Browser timezone:`} {Intl.DateTimeFormat().resolvedOptions().timeZone}</p></label>}

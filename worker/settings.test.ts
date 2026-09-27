@@ -39,7 +39,8 @@ describe("system settings",()=>{
     for(const entry of entries)db.sqlite.prepare("INSERT INTO ops_vehicle_type_catalog(id,name_zh,notes_zh,sort_order,source,created_at,updated_at) VALUES(?,?,?,?,?,'now','now')").run(entry.id,entry.nameZh,entry.notesZh,entry.sortOrder,"test-fixture");
     const page=await(await get("/ops/settings/vehicles")).text();for(const entry of entries){expect(page).toContain(entry.nameZh);if(entry.notesZh)expect(page).toContain(entry.notesZh);}expect(page).toContain("资料车型 · 未开放估价");
     const filtered=await(await get("/ops/settings/vehicles?q=120&state=reference")).text();expect(filtered).toContain("120立方车5轴");expect(filtered).not.toContain("130立方车");
-    const publicVehicles=await(await publicRequest("/api/vehicles")).json() as {vehicles:{id:string}[]};expect(publicVehicles.vehicles).toHaveLength(6);expect(publicVehicles.vehicles.some(vehicle=>vehicle.id.startsWith("heavy-"))).toBe(false);
+    const publicVehicles=await(await publicRequest("/api/vehicles")).json() as {vehicles:{id:string}[];references:{id:string;nameZh:string;notesZh:string}[]};expect(publicVehicles.vehicles).toHaveLength(6);expect(publicVehicles.vehicles.some(vehicle=>vehicle.id.startsWith("heavy-"))).toBe(false);
+    expect(publicVehicles.references).toHaveLength(10);for(const entry of entries)expect(publicVehicles.references).toContainEqual(expect.objectContaining({id:entry.id,nameZh:entry.nameZh,notesZh:entry.notesZh}));expect(publicVehicles.references[0]).not.toHaveProperty("capacityKg");expect(publicVehicles.references[0]).not.toHaveProperty("baseNet");
     expect((await publicRequest("/api/quotes",{vehicleId:entries[0].id,distanceKm:18})).status).toBe(422);
     signIn("operations");expect((await get("/ops/settings/vehicles")).status).toBe(200);signIn("reviewer");expect((await get("/ops/settings/vehicles")).status).toBe(403);
   });

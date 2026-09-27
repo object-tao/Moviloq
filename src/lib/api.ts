@@ -1,4 +1,4 @@
-import type { QuoteEstimate, QuoteRequest, VehicleDefinition } from "../../shared/pricing";
+import type { QuoteEstimate, QuoteRequest, VehicleDefinition, VehicleReference } from "../../shared/pricing";
 import type { BookingInput, SavedDraft } from "../../shared/booking";
 
 export class ApiError extends Error {
@@ -16,7 +16,7 @@ async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const listDrafts = () => jsonRequest<{ drafts: SavedDraft[] }>("/api/drafts");
-export const getVehicleCatalog = () => jsonRequest<{ vehicles: VehicleDefinition[] }>("/api/vehicles");
+export const getVehicleCatalog = () => jsonRequest<{ vehicles: VehicleDefinition[]; references?: VehicleReference[] }>("/api/vehicles");
 export type PublishedContent = { id: string; category: string; titleZh: string; titleEn: string; bodyZh: string; bodyEn: string };
 export const getPublishedContent = () => jsonRequest<{ items: PublishedContent[] }>("/api/content");
 export const getDraft = (id: string) => jsonRequest<{ draft: SavedDraft }>(`/api/drafts/${encodeURIComponent(id)}`);
