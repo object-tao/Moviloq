@@ -16,6 +16,11 @@ export const labels: Record<string, Label> = {
   authorization_missing: ["缺少资料授权", "Authorization missing"], review_required: ["资料审核未通过", "Review required"], policy_missing: ["未发布当地确认的审核清单", "Confirmed review policy missing"], fleet_not_ready: ["所属车队资料未就绪", "Fleet is not ready"],
   driver_not_ready: ["配对司机资料或车型未就绪", "Paired driver or class is not ready"],
   bike: ["自行车", "Bike"], "cargo-bike": ["货运自行车", "Cargo bike"], car: ["轿车", "Car"], caddy: ["小型厢式车", "Caddy"], transporter: ["厢式货车", "Transporter"], "xl-transporter": ["加长厢式货车", "XL Transporter"],
+  "heavy-datongdao-5-axle": ["大通道5轴", "Datongdao · 5 axles"], "heavy-datongdao-6-axle": ["大通道6轴", "Datongdao · 6 axles"],
+  "heavy-120m3-5-axle": ["120立方车5轴", "120 m³ truck · 5 axles"], "heavy-120m3-6-axle": ["120立方车6轴", "120 m³ truck · 6 axles"],
+  "heavy-130m3": ["130立方车", "130 m³ truck"], "heavy-140m3": ["140立方车", "140 m³ truck"],
+  "heavy-flatbed-13m-5-axle": ["13米平板5轴", "13 m flatbed · 5 axles"], "heavy-flatbed-13m-6-axle": ["13米平板6轴", "13 m flatbed · 6 axles"],
+  "heavy-flatbed-17m-5-axle": ["17米平板车5轴", "17 m flatbed · 5 axles"], "heavy-flatbed-17m-6-axle": ["17米平板车6轴", "17 m flatbed · 6 axles"],
   faq: ["常见问题", "FAQ"], announcement: ["公告", "Announcement"], service: ["服务说明", "Service information"],
 };
 export function label(v: View, key: string) { return labels[key] ? t(v, labels[key]) : key; }

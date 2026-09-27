@@ -82,6 +82,14 @@ describe("delivery draft validation", () => {
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.issues.map((i) => i.message)).toContain("OVERWEIGHT");
   });
+  it("enforces owner-confirmed effective volume and payload for heavy test vehicles", () => {
+    const booking = sample(); booking.vehicleId = "heavy-flatbed-13m-6-axle";
+    Object.assign(booking.cargo,{totalWeightKg:28000,totalVolumeM3:200,lengthCm:1200,widthCm:240,heightCm:250});
+    expect(bookingSchema.safeParse(booking).success).toBe(true);
+    booking.cargo.totalVolumeM3=200.01;let result=bookingSchema.safeParse(booking);expect(result.success).toBe(false);if(!result.success)expect(result.error.issues.map(issue=>issue.message)).toContain("OVERVOLUME");
+    booking.cargo.totalVolumeM3=200;booking.cargo.totalWeightKg=28000.1;result=bookingSchema.safeParse(booking);expect(result.success).toBe(false);if(!result.success)expect(result.error.issues.map(issue=>issue.message)).toContain("OVERWEIGHT");
+  });
+  it("restores a safe volume value for legacy drafts that predate the volume field",()=>{const booking=sample();const {totalVolumeM3,...legacyCargo}=booking.cargo;expect(totalVolumeM3).toBe(0.1);expect(restoreBookingLocations({...booking,cargo:legacyCargo}).cargo.totalVolumeM3).toBe(0.1);});
   it("allows upright base rotation, never rotating height", () => {
     const booking = sample(); booking.vehicleId = "car";
     Object.assign(booking.cargo, { lengthCm: 60, widthCm: 90, heightCm: 50 });

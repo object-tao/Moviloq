@@ -24,7 +24,7 @@ const contactFields = {
 };
 export const resourceSchemas = {
   fleet: z.object({ ...contactFields, legalName: text.min(2).max(160), registrationNumber: text.max(100).default("") }),
-  driver: z.object({ ...contactFields, vehicleClasses: z.array(z.enum(vehicleIds)).min(1).max(6) }),
+  driver: z.object({ ...contactFields, vehicleClasses: z.array(z.enum(vehicleIds)).min(1).max(vehicleIds.length) }),
   vehicle: z.object({ ...contactFields, vehicleClass: z.enum(vehicleIds), registration: text.min(2).max(32), country: z.literal("DE"), capacityKg: z.number().positive().max(44000), lengthCm: z.number().positive().max(2000), widthCm: z.number().positive().max(400), heightCm: z.number().positive().max(500), equipment: text.max(300).default("") }),
 };
 export type ResourceData = z.infer<typeof resourceSchemas.fleet> | z.infer<typeof resourceSchemas.driver> | z.infer<typeof resourceSchemas.vehicle>;
@@ -36,8 +36,8 @@ export const configTable = (kind: ConfigKind) => ["site", "country", "city", "pa
 export const canWriteConfig = (role: Role, kind: ConfigKind) => can(role, "config:write") && (!["site", "parameters"].includes(kind) || role === "owner");
 const money = z.number().min(0).max(100000).refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, "Use at most two decimal places");
 export const pricingSchema = z.object({
-  enabled: z.boolean(), baseNet: money, includedKm: z.number().min(0).max(500),
-  tier1UntilKm: z.number().min(0).max(500), perKmNet: money, tier2PerKmNet: money,
+  enabled: z.boolean(), testOnly: z.boolean().default(false), baseNet: money, includedKm: z.number().min(0).max(15000),
+  tier1UntilKm: z.number().min(0).max(15000), perKmNet: money, tier2PerKmNet: money,
   extraStopNet: money, loadingHelpNet: money, helperNet: money,
   freeWaitMinutes: z.number().int().min(0).max(480), waitBlockMinutes: z.number().int().min(1).max(60), waitBlockNet: money,
   priorityRate: z.number().min(0).max(1), vatRate: z.number().min(0).max(1),
@@ -46,14 +46,15 @@ export type PricingRule = z.infer<typeof pricingSchema>;
 export const configSchemas = {
   site: siteSchema, parameters: parametersSchema, country: countrySchema, city: citySchema,
   region: z.object({ enabled: z.boolean(), city: z.literal("Frankfurt"), country: z.literal("DE"), timezone: z.literal("Europe/Berlin"), radiusKm: z.number().positive().max(200), centreLat: z.number().min(49).max(52), centreLng: z.number().min(7).max(10), openingHours: text.min(2).max(300), boundaryNotes: text.min(2).max(600) }),
-  vehicle: z.object({ enabled: z.boolean(), nameZh: text.max(60).default(""), nameEn: text.max(60).default(""), descriptionZh: text.max(300).default(""), descriptionEn: text.max(300).default(""), sortOrder: z.number().int().min(0).max(9999).default(100), capacityKg: z.number().positive().max(1200), lengthCm: z.number().positive().max(500), widthCm: z.number().positive().max(250), heightCm: z.number().positive().max(250) }),
+  vehicle: z.object({ enabled: z.boolean(), nameZh: text.max(60).default(""), nameEn: text.max(60).default(""), descriptionZh: text.max(300).default(""), descriptionEn: text.max(300).default(""), sortOrder: z.number().int().min(0).max(9999).default(100), capacityKg: z.number().positive().max(44000), effectiveVolumeM3: z.number().positive().max(500).optional(), lengthCm: z.number().positive().max(2000), widthCm: z.number().positive().max(400), heightCm: z.number().positive().max(500) }),
   pricing: pricingSchema,
   requirements: z.object({ requiredDocuments: z.array(z.enum(documentTypes)).min(1).max(6), locallyConfirmed: z.literal(true) }),
   content: z.object({ enabled: z.boolean(), category: z.enum(["faq", "announcement", "service"]), titleZh: text.min(2).max(140), titleEn: text.min(2).max(140), bodyZh: text.min(2).max(6000), bodyEn: text.min(2).max(6000) }),
 };
 export type ConfigRow = { id: string; kind: ConfigKind; scope: string; title: string; data_json: string; status: string; version: number; effective_at: string | null; publication_sequence?: number; created_at: string; updated_at: string };
 export function defaultPricing(id: VehicleId): PricingRule {
-  return { enabled: true, baseNet: vehicles[id].baseNet, includedKm: vehicles[id].includedKm, tier1UntilKm: 500, perKmNet: vehicles[id].perKmNet, tier2PerKmNet: vehicles[id].perKmNet, extraStopNet: 4.5, loadingHelpNet: 25.21, helperNet: 25.21, freeWaitMinutes: 10, waitBlockMinutes: 5, waitBlockNet: 3, priorityRate: 0.12, vatRate: 0.19 };
+  const vehicle=vehicles[id];
+  return { enabled: true, testOnly: vehicle.pricingStatus==="test-placeholder", baseNet: vehicle.baseNet, includedKm: vehicle.includedKm, tier1UntilKm: vehicle.tier1UntilKm??500, perKmNet: vehicle.perKmNet, tier2PerKmNet: vehicle.tier2PerKmNet??vehicle.perKmNet, extraStopNet: vehicle.extraStopNet??4.5, loadingHelpNet: vehicle.loadingHelpNet??25.21, helperNet: vehicle.helperNet??25.21, freeWaitMinutes: vehicle.freeWaitMinutes??10, waitBlockMinutes: vehicle.waitBlockMinutes??5, waitBlockNet: vehicle.waitBlockNet??3, priorityRate: vehicle.priorityRate??0.12, vatRate: 0.19 };
 }
 export function scopeFor(kind: ConfigKind, scope: string) {
   if (kind === "site") return scope === "website";

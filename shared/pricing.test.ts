@@ -32,4 +32,9 @@ describe("calculateQuote", () => {
 
     expect(quote.breakdown.wait).toBe(0);
   });
+
+  it("uses the explicit long-distance placeholder tiers for heavy vehicles",()=>{
+    const quote=calculateQuote({vehicleId:"heavy-datongdao-5-axle",distanceKm:1800,extraStops:0,loadingHelp:false,helper:false,waitMinutes:0,priority:false});
+    expect(quote).toMatchObject({net:3055,pricingStatus:"test-placeholder",pricingVersion:"heavy-test-placeholder-2026-09",breakdown:{base:320,distance:2735}});
+  });
 });

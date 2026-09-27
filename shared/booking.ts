@@ -25,10 +25,11 @@ export function createBookingSchema(catalog: typeof vehicles = vehicles, countri
   cargo: z.object({
     description: z.string().trim().min(2).max(160),
     quantity: z.number().int().min(1).max(500),
-    totalWeightKg: z.number().positive().max(1200),
-    lengthCm: z.number().positive().max(500),
-    widthCm: z.number().positive().max(250),
-    heightCm: z.number().positive().max(250),
+    totalWeightKg: z.number().positive().max(44000),
+    totalVolumeM3: z.number().positive().max(500).default(0.1),
+    lengthCm: z.number().positive().max(2000),
+    widthCm: z.number().positive().max(400),
+    heightCm: z.number().positive().max(500),
     fragile: z.boolean()
   }),
   loadingHelp: z.boolean(),
@@ -40,6 +41,9 @@ export function createBookingSchema(catalog: typeof vehicles = vehicles, countri
   if (!vehicle) { context.addIssue({ code: "custom", path: ["vehicleId"], message: "VEHICLE_UNAVAILABLE" }); return; }
   if (value.cargo.totalWeightKg > vehicle.capacityKg) {
     context.addIssue({ code: "custom", path: ["cargo", "totalWeightKg"], message: "OVERWEIGHT" });
+  }
+  if (vehicle.effectiveVolumeM3 && value.cargo.totalVolumeM3 > vehicle.effectiveVolumeM3) {
+    context.addIssue({ code: "custom", path: ["cargo", "totalVolumeM3"], message: "OVERVOLUME" });
   }
   // Upright cargo: length/width may rotate, but height cannot be laid on its side.
   const [length, width, height] = vehicle.cargoSizeCm;
@@ -60,13 +64,14 @@ export const bookingSchema = createBookingSchema();
 export type BookingInput = z.infer<typeof bookingSchema>;
 export type BookingStop = BookingInput["pickup"];
 type StoredStop = Omit<BookingStop, "countryCode" | "city"> & Partial<Pick<BookingStop, "countryCode" | "city">>;
-type StoredBooking = Omit<BookingInput, "pickup" | "dropoffs"> & { pickup: StoredStop; dropoffs: StoredStop[] };
+type StoredCargo = Omit<BookingInput["cargo"], "totalVolumeM3"> & Partial<Pick<BookingInput["cargo"], "totalVolumeM3">>;
+type StoredBooking = Omit<BookingInput, "pickup" | "dropoffs" | "cargo"> & { pickup: StoredStop; dropoffs: StoredStop[]; cargo: StoredCargo };
 
 // Read pre-location drafts without inventing a country/city or changing their address.
 // Saving them still requires the user to select valid locations through stopSchema.
 export function restoreBookingLocations(booking: StoredBooking): BookingInput {
   const restore = (stop: StoredStop): BookingStop => ({ ...stop, countryCode: stop.countryCode ?? "", city: stop.city ?? "" });
-  return { ...booking, pickup: restore(booking.pickup), dropoffs: booking.dropoffs.map(restore) };
+  return { ...booking, pickup: restore(booking.pickup), dropoffs: booking.dropoffs.map(restore), cargo: { ...booking.cargo, totalVolumeM3: booking.cargo.totalVolumeM3 ?? 0.1 } };
 }
 export type SavedDraft = {
   id: string;
@@ -102,7 +107,7 @@ export function blankBooking(): BookingInput {
   return {
     pickup: blankStop(), dropoffs: [blankStop()], vehicleId: "transporter", distanceKm: 18,
     serviceType: "on-demand", scheduledAt: null,
-    cargo: { description: "", quantity: 1, totalWeightKg: 20, lengthCm: 60, widthCm: 40, heightCm: 40, fragile: false },
+    cargo: { description: "", quantity: 1, totalWeightKg: 20, totalVolumeM3: 0.1, lengthCm: 60, widthCm: 40, heightCm: 40, fragile: false },
     loadingHelp: false, helper: false, priority: false, notes: ""
   };
 }
