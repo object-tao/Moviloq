@@ -47,6 +47,21 @@ Logo 采用已有图片的 HTTPS URL 或本站路径，不包含图片上传/媒
 
 ## 数据迁移与验证
 
+### 中国至中亚测试国家与城市
+
+`data/central-asia-test-locations-20260927.json` 保存用户提供的 5 个国家、28 个城市及英文稳定标识。导入后这些国家和城市会出现在预约页选择器中，但这只代表测试目录可选，不代表路线已核验、已定价或已开放真实接单。
+
+导入脚本要求明确指定本地或生产环境，使用固定记录标识并写入发布审计；重复运行不会新增重复记录，遇到相同国家/城市范围的其他草稿或版本时拒绝覆盖。导入前后会校验车型、价格、服务区域和重型车型资料数量未变化。
+
+```bash
+node scripts/import-central-asia-locations.mjs --check-local
+node scripts/import-central-asia-locations.mjs --apply-local
+node scripts/import-central-asia-locations.mjs --check-production
+node scripts/import-central-asia-locations.mjs --apply-production
+```
+
+用户原始清单把「明斯克」列在俄罗斯下。系统依照原始清单暂存为 `RU:Minsk`，内部标题与审计均标记“待确认”；明斯克通常属于白俄罗斯，正式业务使用前应确认是否改为白俄罗斯（BY）。
+
 ### 用户提供的 10 种重型车型
 
 `data/vehicle-types-20260927.json` 保存用户提供的原始名称与备注。`0005_vehicle_type_catalog.sql` 为资料车型建立独立目录，原六档估价车型及价格规则不变。
