@@ -87,6 +87,8 @@ export type SavedDraft = {
 export function quoteInput(booking: BookingInput): QuoteRequest {
   return {
     vehicleId: booking.vehicleId, distanceKm: booking.distanceKm,
+    pickup: { countryCode: booking.pickup.countryCode, city: booking.pickup.city },
+    dropoff: { countryCode: booking.dropoffs[0].countryCode, city: booking.dropoffs[0].city },
     extraStops: booking.dropoffs.length - 1,
     loadingHelp: booking.loadingHelp, helper: booking.helper,
     priority: booking.priority, waitMinutes: 0

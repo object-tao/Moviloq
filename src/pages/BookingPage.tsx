@@ -6,7 +6,7 @@ import { bookingCountry } from "../../shared/locations";
 import { ArrowIcon, TruckIcon } from "../components/Icons";
 import { ApiError, getDraft, getVehicleCatalog, requestQuote, saveDraft } from "../lib/api";
 import { bookingCopy, bookingError } from "../lib/booking-copy";
-import { formatEuro } from "../lib/format";
+import { formatCurrency } from "../lib/format";
 import { useLanguage } from "../lib/i18n";
 
 import { useSettings } from "../lib/settings";
@@ -165,13 +165,13 @@ export function BookingPage() {
         {saved && <p className="form-success" role="status">{t.saved}</p>}
       </form>
       <aside className="quote-panel" aria-live="polite"><div className="quote-panel__head"><strong>{t.current}</strong><span className="estimate-badge">{t.draftLabel}</span></div>
-        {estimate ? <>{estimate.pricingStatus==="test-placeholder"&&<p className="form-alert test-price-alert" role="status"><strong>{t.testPrice}</strong><br />{t.testPriceNote}</p>}<div className="quote-total"><strong>{formatEuro(estimate.total, language)}</strong><span>{zh ? "含工程估算税额" : "Includes estimated tax"}</span></div><p className="field-note">{zh ? "价格版本" : "Pricing version"}: {estimate.pricingVersion ?? "engineering-2026-09"}</p><div className="quote-route"><TruckIcon /><div><strong>{(zh?catalog[booking.vehicleId]?.nameZh:catalog[booking.vehicleId]?.nameEn)||vehicleNames[booking.vehicleId][zh ? 1 : 0]}</strong><span>{booking.distanceKm} km · {booking.dropoffs.length} {t.dropoff}</span></div></div>
-          <dl className="breakdown">{([['base', t.base], ['distance', t.mileage], ['stops', t.stops], ['services', t.services], ['priority', t.priorityFee]] as const).filter(([key]) => estimate.breakdown[key] > 0).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatEuro(estimate.breakdown[key], language)}</dd></div>)}<div className="breakdown-subtotal"><dt>{t.net}</dt><dd>{formatEuro(estimate.net, language)}</dd></div><div><dt>{zh ? "估算税额" : "Estimated tax"} ({Math.round(estimate.vatRate * 10000) / 100}%)</dt><dd>{formatEuro(estimate.vat, language)}</dd></div></dl>
+        {estimate ? <>{estimate.pricingStatus==="test-placeholder"&&<p className="form-alert test-price-alert" role="status"><strong>{t.testPrice}</strong><br />{t.testPriceNote}</p>}{estimate.pricingStatus==="confirmed-route"&&<p className="form-success" role="status"><strong>{t.confirmedRoute}</strong><br />{t.confirmedRouteNote}</p>}<div className="quote-total"><strong>{formatCurrency(estimate.total,estimate.currency,language)}</strong><span>{estimate.quoteMode==="fixed-route"?(zh?"USD 客户最终线路总价":"USD customer-final route total"):(zh?"含工程估算税额":"Includes estimated tax")}</span></div><p className="field-note">{zh ? "价格版本" : "Pricing version"}: {estimate.pricingVersion ?? "engineering-2026-09"}</p><div className="quote-route"><TruckIcon /><div><strong>{(zh?catalog[booking.vehicleId]?.nameZh:catalog[booking.vehicleId]?.nameEn)||vehicleNames[booking.vehicleId][zh ? 1 : 0]}</strong><span>{booking.distanceKm} km · {booking.dropoffs.length} {t.dropoff}</span></div></div>
+          {estimate.quoteMode==="fixed-route"?<dl className="breakdown"><div className="breakdown-subtotal"><dt>{t.confirmedRoute}</dt><dd>{formatCurrency(estimate.total,estimate.currency,language)}</dd></div></dl>:<dl className="breakdown">{([['base', t.base], ['distance', t.mileage], ['stops', t.stops], ['services', t.services], ['priority', t.priorityFee]] as const).filter(([key]) => estimate.breakdown[key] > 0).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatCurrency(estimate.breakdown[key],estimate.currency,language)}</dd></div>)}<div className="breakdown-subtotal"><dt>{t.net}</dt><dd>{formatCurrency(estimate.net,estimate.currency,language)}</dd></div><div><dt>{zh ? "估算税额" : "Estimated tax"} ({Math.round(estimate.vatRate * 10000) / 100}%)</dt><dd>{formatCurrency(estimate.vat,estimate.currency,language)}</dd></div></dl>}
           {expired ? <p className="form-alert">{t.stale}</p> : <p className="field-note">{zh?`本次估价有效期 ${estimate.validForMinutes} 分钟，保存时会重新计算；并非正式订单。`:`This estimate is valid for ${estimate.validForMinutes} minutes and recalculated on saving. Not a confirmed order.`}</p>}
           <label className="simple-check consent-check"><input type="checkbox" checked={consent} disabled={busy !== null} onChange={(e) => setConsent(e.target.checked)} /><span>{t.consent} <Link to="/legal/drafts" target="_blank" rel="noreferrer">{t.privacy}</Link></span></label>
           <button type="button" className="button button--full" disabled={busy !== null || expired || !consent} onClick={() => void save()}>{busy === "save" ? t.saving : t.save}</button>
         </> : <div className="quote-empty"><div className="quote-empty__icon"><TruckIcon size={34} /></div><h3>{t.empty}</h3><p>{t.emptyText}</p></div>}
-        <p className="quote-disclaimer">{t.note}</p>
+        <p className="quote-disclaimer">{estimate?.quoteMode==="fixed-route"?t.confirmedRouteNote:t.note}</p>
       </aside>
     </div>}
   </section>;

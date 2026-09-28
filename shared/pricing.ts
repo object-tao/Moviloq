@@ -98,12 +98,14 @@ export const vehicles: Record<VehicleId, VehicleDefinition> = {
 export const quoteRequestSchema = z.object({
   vehicleId: z.enum(vehicleIds),
   distanceKm: z.number().min(1).max(15000),
+  pickup: z.object({ countryCode: z.string().length(2), city: z.string().min(1).max(80) }).optional(),
+  dropoff: z.object({ countryCode: z.string().length(2), city: z.string().min(1).max(80) }).optional(),
   extraStops: z.number().int().min(0).max(19).default(0),
   loadingHelp: z.boolean().default(false),
   helper: z.boolean().default(false),
   waitMinutes: z.number().int().min(0).max(480).default(0),
   priority: z.boolean().default(false)
-});
+}).refine(value => !!value.pickup === !!value.dropoff, { message: "Pickup and drop-off must be supplied together", path: ["dropoff"] });
 
 export type QuoteRequest = z.infer<typeof quoteRequestSchema>;
 
@@ -117,7 +119,7 @@ export type QuoteBreakdown = {
 };
 
 export type QuoteEstimate = {
-  currency: "EUR";
+  currency: "EUR" | "USD";
   net: number;
   vat: number;
   vatRate: number;
@@ -129,7 +131,18 @@ export type QuoteEstimate = {
   expiresAt: string;
   pricingVersion?: string;
   pricingRule?: PricingRule;
-  pricingStatus?: "test-placeholder";
+  pricingStatus?: "test-placeholder" | "confirmed-route";
+  quoteMode?: "distance-estimate" | "fixed-route";
+  priceBasis?: "customer-final";
+};
+
+export type RouteQuoteRate = {
+  id: string;
+  vehicleId: VehicleId;
+  amount: number;
+  currency: "USD";
+  priceBasis: "customer-final";
+  taxIncluded: true;
 };
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
@@ -168,9 +181,32 @@ export function calculateQuote(input: QuoteRequest, rule?: PricingRule, pricingV
     validForMinutes: 10,
     kind: "estimate",
     pricingVersion: effectivePricingVersion,
+    quoteMode: "distance-estimate",
     ...(rule ? { pricingRule: rule } : {}),
     ...((rule?.testOnly ?? vehicle.pricingStatus === "test-placeholder") ? { pricingStatus: "test-placeholder" as const } : {}),
     quotedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 10 * 60_000).toISOString()
+  };
+}
+
+export function calculateFixedRouteQuote(input: QuoteRequest, rate: RouteQuoteRate): QuoteEstimate {
+  quoteRequestSchema.parse(input);
+  if (input.vehicleId !== rate.vehicleId) throw new Error("ROUTE_QUOTE_UNAVAILABLE");
+  const quotedAt = new Date().toISOString();
+  return {
+    currency: rate.currency,
+    net: rate.amount,
+    vat: 0,
+    vatRate: 0,
+    total: rate.amount,
+    breakdown: { base: rate.amount, distance: 0, stops: 0, services: 0, wait: 0, priority: 0 },
+    validForMinutes: 10,
+    kind: "estimate",
+    pricingVersion: rate.id,
+    pricingStatus: "confirmed-route",
+    quoteMode: "fixed-route",
+    priceBasis: rate.priceBasis,
+    quotedAt,
+    expiresAt: new Date(Date.parse(quotedAt) + 10 * 60_000).toISOString()
   };
 }

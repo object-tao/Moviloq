@@ -1,5 +1,5 @@
 {
-  "source": "owner-central-asia-test-locations-20260927-v1",
+  "source": "owner-central-asia-test-locations-20260928-v2",
   "countries": [
     {
       "code": "CN", "nameZh": "中国", "nameEn": "China", "sortOrder": 100,
@@ -42,9 +42,14 @@
       "code": "RU", "nameZh": "俄罗斯", "nameEn": "Russia", "sortOrder": 103,
       "cities": [
         {"value": "Moscow", "nameZh": "莫斯科", "nameEn": "Moscow", "sortOrder": 0},
-        {"value": "Minsk", "nameZh": "明斯克", "nameEn": "Minsk", "sortOrder": 1, "internalNote": "用户指定归属俄罗斯，待业务确认；明斯克通常归属白俄罗斯。"},
         {"value": "Saint Petersburg", "nameZh": "圣彼得堡", "nameEn": "Saint Petersburg", "sortOrder": 2},
         {"value": "Yekaterinburg", "nameZh": "叶卡捷琳堡", "nameEn": "Yekaterinburg", "sortOrder": 3}
+      ]
+    },
+    {
+      "code": "BY", "nameZh": "白俄罗斯", "nameEn": "Belarus", "sortOrder": 104,
+      "cities": [
+        {"value": "Minsk", "nameZh": "明斯克", "nameEn": "Minsk", "sortOrder": 0}
       ]
     },
     {

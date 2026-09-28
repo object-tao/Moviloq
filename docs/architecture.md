@@ -11,7 +11,7 @@ Moviloq is a Cloudflare-native full-stack application:
 - Cloudflare D1 stores browser-scoped draft workspaces in an EU-jurisdiction production database; each preview uses a different database.
 - GitHub Actions enforces lint, type checking, tests and a production build on every change.
 
-The browser never receives provider credentials. Current shared pricing rules are public development fixtures, not private commercial rates. Both the quote API and draft saves calculate on the server, ignoring client-supplied totals.
+The browser never receives provider credentials. Generic distance pricing remains public development-fixture data. Owner-confirmed Khorgos route totals are stored separately in `ops_route_quotes`; the server selects an exact origin, destination and vehicle match before falling back to distance pricing. Both the quote API and draft saves calculate on the server, ignoring client-supplied totals.
 
 ## Operations preparation (implemented)
 
@@ -21,7 +21,7 @@ The separate admin Worker keeps password credentials and staff roles in `ADMIN_D
 
 `POST /api/drafts` creates a workspace only after valid input. A random 256-bit bearer credential is held in an HttpOnly, SameSite=Strict, host-only cookie (Secure and `__Host-` prefixed on HTTPS); D1 stores only its SHA-256 hash. This is browser access, not account authentication or cross-device recovery. All reads, updates and deletes scope SQL by the session hash. Draft IDs alone grant no access. Mutations require the exact same Origin, and private responses are never cached.
 
-Drafts contain route, contact fields, cargo, schedule, selected vehicle and an estimate snapshot. Validation limits payloads to 32 KiB, 20 drop-offs and the vehicle's total weight/largest upright item envelope. The system does not yet geocode addresses, validate service coverage or solve multi-item packing. A workspace holds at most 30 drafts. Save retries use an idempotency key within an established session. Atomic version checks reject concurrent update/delete conflicts instead of overwriting them. Version numbers are conflict controls, not a full revision-history audit log.
+Drafts contain route, contact fields, cargo, schedule, selected vehicle and an estimate snapshot. Validation limits payloads to 32 KiB, 20 drop-offs and the vehicle's total weight/largest upright item envelope. Exact Khorgos fixed-route quotes apply only to one drop-off; a blank source cell or added drop-off returns `ROUTE_QUOTE_UNAVAILABLE` instead of inventing a price. The system does not yet geocode addresses, validate service coverage or solve multi-item packing. A workspace holds at most 30 drafts. Save retries use an idempotency key within an established session. Atomic version checks reject concurrent update/delete conflicts instead of overwriting them. Version numbers are conflict controls, not a full revision-history audit log.
 
 Cloudflare's rate-limit binding throttles draft requests by workspace; requests without a workspace use the connecting IP. This is a per-location safety throttle, not a globally exact quota or complete bot defence. Expiry is fixed at 30 days from workspace creation. A production scheduled handler removes expired sessions and cascades their drafts; access checks enforce expiry even if that job is delayed.
 

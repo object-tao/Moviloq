@@ -1,4 +1,4 @@
-import { calculateQuote, vehicleIds, vehicles, type QuoteRequest, type VehicleReference } from "../shared/pricing";
+import { calculateFixedRouteQuote, calculateQuote, vehicleIds, vehicles, type QuoteRequest, type RouteQuoteRate, type VehicleReference } from "../shared/pricing";
 import { configSchemas, liveConfigs, type ConfigRow } from "../shared/operations";
 import { bookingCountries, type Country } from "../shared/locations";
 import { defaultParameters, defaultSite, type PublicSettings } from "../shared/settings";
@@ -28,6 +28,22 @@ export async function publishedVehicleReferences(db?: D1Database): Promise<Vehic
     }>();
   return rows.results.filter(row=>!vehicleIds.includes(row.id as typeof vehicleIds[number])).map(row => ({ id: row.id, nameZh: row.name_zh, nameEn: row.name_en, notesZh: row.notes_zh, notesEn: row.notes_en }));
 }
+export type RouteQuoteLookup = { covered: boolean; rate?: RouteQuoteRate };
+type RouteQuoteRow = { id: string; vehicle_id: string; amount_cents: number; currency: "USD"; price_basis: "customer-final"; tax_included: number };
+export async function publishedRouteQuote(db: D1Database | undefined, input: QuoteRequest): Promise<RouteQuoteLookup | undefined> {
+  if (!db || !input.pickup || !input.dropoff) return undefined;
+  const row = await db.prepare(`SELECT id,vehicle_id,amount_cents,currency,price_basis,tax_included
+    FROM ops_route_quotes
+    WHERE origin_country_code=? AND origin_city=? AND destination_country_code=? AND destination_city=?
+      AND status='active' AND effective_at<=?
+    ORDER BY CASE WHEN vehicle_id=? THEN 0 ELSE 1 END,effective_at DESC,id DESC LIMIT 1`)
+    .bind(input.pickup.countryCode,input.pickup.city,input.dropoff.countryCode,input.dropoff.city,new Date().toISOString(),input.vehicleId)
+    .first<RouteQuoteRow>();
+  if (!row) return { covered: false };
+  if (row.vehicle_id !== input.vehicleId) return { covered: true };
+  if (row.currency!=="USD" || row.price_basis!=="customer-final" || row.tax_included!==1) throw new Error("INVALID_ROUTE_QUOTE");
+  return { covered: true, rate: { id: row.id, vehicleId: input.vehicleId, amount: row.amount_cents / 100, currency: row.currency, priceBasis: row.price_basis, taxIncluded: true } };
+}
 export function configuredSettings(configs: Map<string, ConfigRow>): PublicSettings {
   const site = configs.get("site:website"); const parameters = configs.get("parameters:booking");
   const countries = new Map<string, Country>(bookingCountries.map((country, index) => [country.code, { ...country, cities: [...country.cities], enabled: true, sortOrder: index }]));
@@ -50,7 +66,7 @@ export function configuredSettings(configs: Map<string, ConfigRow>): PublicSetti
   }
   return { site: site ? configSchemas.site.parse(JSON.parse(site.data_json)) : { ...defaultSite }, parameters: parameters ? configSchemas.parameters.parse(JSON.parse(parameters.data_json)) : { ...defaultParameters }, countries: [...countries.values()].sort((a,b) => (a.sortOrder ?? 0)-(b.sortOrder ?? 0) || a.code.localeCompare(b.code)) };
 }
-export function quoteWithConfig(input: QuoteRequest, configs: Map<string, ConfigRow>) {
+export function quoteWithConfig(input: QuoteRequest, configs: Map<string, ConfigRow>, routeQuote?: RouteQuoteLookup) {
   const parameters = configuredSettings(configs).parameters;
   if (input.distanceKm > parameters.maxDistanceKm || input.extraStops >= parameters.maxDropoffs) throw new Error("BOOKING_LIMIT_EXCEEDED");
   const region = configs.get("region:frankfurt");
@@ -59,6 +75,7 @@ export function quoteWithConfig(input: QuoteRequest, configs: Map<string, Config
   const row = configs.get(`pricing:${input.vehicleId}`);
   const data = row ? configSchemas.pricing.parse(JSON.parse(row.data_json)) : undefined;
   if (data && !data.enabled) throw new Error("VEHICLE_UNAVAILABLE");
-  const quote = calculateQuote(input, data, row?.id);
+  if (routeQuote?.covered && (!routeQuote.rate || input.extraStops > 0)) throw new Error("ROUTE_QUOTE_UNAVAILABLE");
+  const quote = routeQuote?.rate ? calculateFixedRouteQuote(input,routeQuote.rate) : calculateQuote(input, data, row?.id);
   return { ...quote, validForMinutes: parameters.quoteValidityMinutes, expiresAt: new Date(Date.parse(quote.quotedAt) + parameters.quoteValidityMinutes * 60000).toISOString() };
 }

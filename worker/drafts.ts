@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { createBookingSchema, quoteInput, restoreBookingLocations, validSchedule, type SavedDraft } from "../shared/booking";
-import { configuredSettings, publishedConfigs, configuredVehicles, quoteWithConfig } from "./public-config";
+import { configuredSettings, publishedConfigs, configuredVehicles, publishedRouteQuote, quoteWithConfig } from "./public-config";
 
 export type DraftBindings = { DB?: D1Database; DRAFT_LIMITER?: RateLimit; ENVIRONMENT?: string };
 type Variables = { sessionHash: string | null; expiresAt: string | null };
@@ -95,9 +95,10 @@ drafts.on(["POST", "PUT"], ["/", "/:id"], async (c) => {
   }
   const requestJson = JSON.stringify(parsed.data.booking);
   let estimate;
-  try { estimate = quoteWithConfig(quoteInput(parsed.data.booking), configs); }
+  const quoteRequest=quoteInput(parsed.data.booking);
+  try { estimate = quoteWithConfig(quoteRequest, configs, await publishedRouteQuote(c.env.DB,quoteRequest)); }
   catch (error) {
-    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE", "BOOKING_LIMIT_EXCEEDED"].includes(error.message)) return c.json({ error: error.message }, 422);
+    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE", "BOOKING_LIMIT_EXCEEDED", "ROUTE_QUOTE_UNAVAILABLE"].includes(error.message)) return c.json({ error: error.message }, 422);
     throw error;
   }
   const estimateJson = JSON.stringify(estimate);
