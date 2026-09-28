@@ -13,7 +13,7 @@ for(const country of catalogue.countries){
     records.push({id:`central-asia-city-${country.code.toLowerCase()}-${city.value.toLowerCase().replaceAll(' ','-')}-v1`,kind:'city',scope:`${country.code}:${encodeURIComponent(city.value)}`,title:city.internalNote?`${city.nameZh} / ${country.code}（待确认国家归属）`:`中亚业务测试城市 / ${country.code} / ${city.nameZh}`,data:{enabled:true,countryCode:country.code,cityValue:city.value,nameZh:city.nameZh,nameEn:city.nameEn,sortOrder:city.sortOrder},internalNote:city.internalNote??''});
   }
 }
-assert.equal(catalogue.countries.length,5);assert.equal(records.filter(row=>row.kind==='country').length,5);assert.equal(records.filter(row=>row.kind==='city').length,28);assert.equal(new Set(records.map(row=>`${row.kind}:${row.scope}`)).size,records.length);
+assert.equal(catalogue.countries.length,6);assert.equal(records.filter(row=>row.kind==='country').length,6);assert.equal(records.filter(row=>row.kind==='city').length,28);assert.equal(new Set(records.map(row=>`${row.kind}:${row.scope}`)).size,records.length);
 
 const normalized=value=>JSON.stringify(value,Object.keys(value).sort());
 export function pendingRecords(existing){

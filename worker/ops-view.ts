@@ -9,7 +9,7 @@ export const labels: Record<string, Label> = {
   "fleet-list": ["车队列表", "Fleet list"], "driver-list": ["司机列表", "Driver list"], "vehicle-list": ["车辆列表", "Vehicle list"],
   "reviews-fleet": ["车队审核", "Fleet reviews"], "reviews-driver": ["司机审核", "Driver reviews"], "reviews-vehicle": ["车辆审核", "Vehicle reviews"],
   site: ["网站设置", "Website settings"], parameters: ["业务参数", "Business parameters"], country: ["国家", "Country"], city: ["城市", "City"],
-  region: ["服务区域", "Service area"], pricing: ["价格规则", "Pricing"], requirements: ["审核清单", "Review policies"], content: ["内容与公告", "Content"],
+  region: ["服务区域", "Service area"], pricing: ["价格规则", "Pricing"], "route-pricing": ["线路报价", "Route quotes"], requirements: ["审核清单", "Review policies"], content: ["内容与公告", "Content"],
   owner: ["管理员", "Owner"], operations: ["运营", "Operations"], reviewer: ["审核员", "Reviewer"],
   draft: ["草稿", "Draft"], submitted: ["待审核", "Awaiting review"], needs_info: ["待补件", "Needs information"], approved: ["审核通过", "Approved"], rejected: ["已拒绝", "Rejected"], suspended: ["已暂停", "Suspended"], published: ["已发布", "Published"], active: ["启用", "Active"], disabled: ["停用", "Disabled"],
   identity: ["身份资料", "Identity"], driving_licence: ["驾驶资格", "Driving licence"], vehicle_registration: ["车辆登记", "Vehicle registration"], insurance: ["保险资料", "Insurance"], business_registration: ["企业登记", "Business registration"], other: ["其他资料", "Other evidence"],
@@ -66,7 +66,7 @@ function navigation(v: View, section: string) {
   const settings: Item[] = [];
   if (can(v.role, "config:read")) {
     if(v.role==="owner") settings.push(["settings-site", "/ops/configs?kind=site", labels.site]);
-    settings.push(["settings-locations", "/ops/settings/locations", ["国家与城市", "Countries & cities"]], ["settings-region", "/ops/configs?kind=region", labels.region], ["settings-vehicle", "/ops/settings/vehicles", ["车型设置", "Vehicle classes"]], ["settings-pricing", "/ops/configs?kind=pricing", ["价格与费用", "Pricing & fees"]]);
+    settings.push(["settings-locations", "/ops/settings/locations", ["国家与城市", "Countries & cities"]], ["settings-region", "/ops/configs?kind=region", labels.region], ["settings-vehicle", "/ops/settings/vehicles", ["车型设置", "Vehicle classes"]], ["settings-pricing", "/ops/configs?kind=pricing", ["价格与费用", "Pricing & fees"]], ["settings-route-pricing", "/ops/settings/route-quotes", labels["route-pricing"]]);
     if(v.role==="owner") settings.push(["settings-parameters", "/ops/configs?kind=parameters", labels.parameters]);
     settings.push(["settings-requirements", "/ops/configs?kind=requirements", ["审核规则", "Review rules"]], ["settings-content", "/ops/configs?kind=content", labels.content]);
   }

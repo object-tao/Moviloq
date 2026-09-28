@@ -54,6 +54,19 @@ async function verify() {
     assert.ok(quote.pricingVersion, "Pricing version must be traceable");
   }
 
+  const fixedRoute = await get("/api/quotes", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ vehicleId: "heavy-datongdao-5-axle", distanceKm: 1800, pickup: { countryCode: "CN", city: "Khorgos" }, dropoff: { countryCode: "KZ", city: "Almaty" } })
+  });
+  assert.equal(fixedRoute.status, 200, "Khorgos fixed route quote status");
+  const fixedQuote = (await fixedRoute.json()).quote;
+  assert.equal(fixedQuote.currency, "USD");
+  assert.equal(fixedQuote.total, 3952);
+  assert.equal(fixedQuote.vat, 0);
+  assert.equal(fixedQuote.quoteMode, "fixed-route");
+  assert.equal(fixedQuote.pricingStatus, "confirmed-route");
+
   const invalid = await get("/api/quotes", {
     method: "POST",
     headers: { "content-type": "application/json" },

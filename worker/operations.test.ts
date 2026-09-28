@@ -191,7 +191,7 @@ describe("operations preparation",()=>{
     const invalid=await post("/ops/resources/fleet/create",{...fields,phone:"invalid phone"},origin,"application/json");expect(invalid.status).toBe(422);expect(await invalid.json()).toMatchObject({error:"INVALID_INPUT",message:expect.stringContaining("phone")});
     const forged=await post("/ops/resources/fleet/create",fields,"https://untrusted.example","application/json");expect(forged.status).toBe(403);expect(await forged.json()).toMatchObject({error:"INVALID_CSRF"});
     signIn("reviewer");const denied=await post("/ops/resources/fleet/create",fields,origin,"application/json");expect(denied.status).toBe(403);expect(await denied.json()).toMatchObject({error:"FORBIDDEN"});
-    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_resources").get()?.n).toBe(0);expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events").get()?.n).toBe(0);
+    expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_resources").get()?.n).toBe(0);expect(ops.sqlite.prepare("SELECT count(*) n FROM ops_events WHERE actor_role!='automation'").get()?.n).toBe(0);
   });
   it("groups lists under their parent menus and keeps dedicated review navigation active",async()=>{
     const fleet=await create();

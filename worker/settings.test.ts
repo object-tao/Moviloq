@@ -50,15 +50,27 @@ describe("system settings",()=>{
     expect(await(await publicApp.request("/api/settings",undefined,{})).json()).toMatchObject({site:defaultSite,parameters:defaultParameters});
     expect(Object.keys(await settings()).sort()).toEqual(["countries","parameters","site"]);
   });
-  it("groups ten owner menus, preserves legacy routes, and gates settings by role",async()=>{
+  it("groups eleven owner menus, preserves legacy routes, and gates settings by role",async()=>{
     const html=await(await get("/")).text();const group=html.match(/<details[^>]*data-menu="settings"[\s\S]*?<\/details>/)![0];
-    expect(group.match(/<a /g)).toHaveLength(10);for(const name of ["网站设置","国家与城市","服务区域","车型设置","价格与费用","业务参数","审核规则","内容与公告","员工与权限","操作日志"])expect(group).toContain(name);
-    for(const path of ["/ops/settings/locations","/ops/settings/locations?type=city","/ops/settings/vehicles","/ops/configs?kind=site","/ops/configs?kind=parameters","/ops/configs?kind=region","/ops/configs?kind=pricing","/ops/configs?kind=requirements","/ops/configs?kind=content","/ops/staff","/ops/audit"]){const res=await get(path);expect(res.status,path).toBe(200);}
+    expect(group.match(/<a /g)).toHaveLength(11);for(const name of ["网站设置","国家与城市","服务区域","车型设置","价格与费用","线路报价","业务参数","审核规则","内容与公告","员工与权限","操作日志"])expect(group).toContain(name);
+    for(const path of ["/ops/settings/locations","/ops/settings/locations?type=city","/ops/settings/vehicles","/ops/settings/route-quotes","/ops/configs?kind=site","/ops/configs?kind=parameters","/ops/configs?kind=region","/ops/configs?kind=pricing","/ops/configs?kind=requirements","/ops/configs?kind=content","/ops/staff","/ops/audit"]){const res=await get(path);expect(res.status,path).toBe(200);}
     const modal=await get("/ops/settings/locations");expect(modal.headers.get("Content-Security-Policy")).toContain(settingsDialogHash);expect(modal.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");expect(await modal.text()).toContain("data-settings-dialog");
     signIn("operations");const opsHtml=await(await get("/")).text();expect(opsHtml).toContain("系统设置");expect(opsHtml).not.toContain('href="/ops/configs?kind=parameters"');expect(opsHtml).not.toContain('href="/ops/staff"');
     for(const kind of ["site","parameters"]){expect((await get(`/ops/configs/new?kind=${kind}`)).status).toBe(403);expect((await post("/ops/configs/create",{kind,scope:kind==="site"?"website":"booking",title:"Forbidden",...configDefaults(kind as ConfigKind,"")})).status).toBe(403);}
     signIn("reviewer");expect(await(await get("/")).text()).not.toContain('data-menu="settings"');expect((await get("/ops/settings/vehicles")).status).toBe(403);expect((await post("/ops/configs/create",{kind:"country",scope:"AT"})).status).toBe(403);
     jar.clear();expect((await get("/ops/settings/locations")).headers.get("location")).toBe("/login");
+  });
+  it("imports the complete Khorgos USD route table, preserves blanks, and applies exact fixed quotes",async()=>{
+    expect(db.sqlite.prepare("SELECT count(*) n FROM ops_route_quotes WHERE status='active'").get()?.n).toBe(242);
+    expect(db.sqlite.prepare("SELECT count(*) n FROM ops_route_quotes WHERE currency='USD' AND price_basis='customer-final' AND tax_included=1 AND fleet_id IS NULL").get()?.n).toBe(242);
+    expect(db.sqlite.prepare("SELECT amount_cents FROM ops_route_quotes WHERE origin_city='Khorgos' AND destination_country_code='KZ' AND destination_city='Almaty' AND vehicle_id='heavy-datongdao-5-axle'").get()?.amount_cents).toBe(395200);
+    expect(db.sqlite.prepare("SELECT amount_cents FROM ops_route_quotes WHERE destination_country_code='BY' AND destination_city='Minsk' AND vehicle_id='heavy-flatbed-13m-6-axle'").get()?.amount_cents).toBe(900000);
+    expect(db.sqlite.prepare("SELECT count(*) n FROM ops_route_quotes WHERE destination_city='Moscow' AND vehicle_id IN ('heavy-datongdao-6-axle','heavy-140m3')").get()?.n).toBe(0);
+    const current=await settings();expect(current.countries.find(item=>item.code==="BY")?.cities).toContainEqual(["Minsk","明斯克","Minsk"]);expect(current.countries.find(item=>item.code==="RU")?.disabledCities).toContain("Minsk");
+    const fixed=await publicRequest("/api/quotes",{vehicleId:"heavy-datongdao-5-axle",distanceKm:1800,pickup:{countryCode:"CN",city:"Khorgos"},dropoff:{countryCode:"KZ",city:"Almaty"}});expect(fixed.status).toBe(200);expect(await fixed.json()).toMatchObject({quote:{currency:"USD",total:3952,net:3952,vat:0,vatRate:0,quoteMode:"fixed-route",pricingStatus:"confirmed-route",priceBasis:"customer-final"}});
+    const blank=await publicRequest("/api/quotes",{vehicleId:"heavy-datongdao-6-axle",distanceKm:5000,pickup:{countryCode:"CN",city:"Khorgos"},dropoff:{countryCode:"RU",city:"Moscow"}});expect(blank.status).toBe(422);expect(await blank.json()).toMatchObject({error:"ROUTE_QUOTE_UNAVAILABLE"});
+    const fallback=await publicRequest("/api/quotes",{vehicleId:"heavy-datongdao-5-axle",distanceKm:100,pickup:{countryCode:"CN",city:"Alashankou"},dropoff:{countryCode:"KZ",city:"Almaty"}});expect(fallback.status).toBe(200);expect(await fallback.json()).toMatchObject({quote:{currency:"EUR",quoteMode:"distance-estimate",pricingStatus:"test-placeholder"}});
+    const page=await(await get("/ops/settings/route-quotes?q=Almaty&vehicle=heavy-datongdao-5-axle")).text();expect(page).toContain("$3,952.00");expect(page).toContain("平台线路价 · 未绑定车队");expect(page).toContain("242 条");
   });
   it("publishes immutable website versions, checks stale edits, restores by copying, and never changes credentials",async()=>{
     const users=auth.sqlite.prepare("SELECT * FROM admin_users ORDER BY id").all();const id=await create("site","website",{name:"Moviloq Test",introductionZh:"<script>alert(1)</script>"});
@@ -110,6 +122,6 @@ describe("system settings",()=>{
     const input=booking();input.cargo.totalWeightKg=31;expect((await publicRequest("/api/drafts",{booking:input})).status).toBe(422);
     const off=await create("vehicle","transporter",{enabled:false});await publish(off);expect(configuredVehicles(await publishedConfigs(db.db)).transporter).toBeUndefined();expect((await publicRequest("/api/quotes",quoteInput(booking()))).status).toBe(422);
     expect((await post("/ops/configs/create",{kind:"vehicle",scope:"invented",title:"Unknown",...configDefaults("vehicle","transporter")})).status).toBe(422);
-    expect(configTable("vehicle")).toBe("ops_configs");expect(configTable("site")).toBe("ops_settings");expect(db.sqlite.prepare("SELECT count(*) n FROM ops_all_configs").get()?.n).toBe(2);
+    expect(configTable("vehicle")).toBe("ops_configs");expect(configTable("site")).toBe("ops_settings");expect(db.sqlite.prepare("SELECT count(*) n FROM ops_all_configs WHERE kind='vehicle'").get()?.n).toBe(2);
   });
 });

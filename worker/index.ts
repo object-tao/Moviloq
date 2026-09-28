@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { quoteRequestSchema } from "../shared/pricing";
-import { configuredSettings, publishedConfigs, configuredVehicles, publishedVehicleReferences, quoteWithConfig } from "./public-config";
+import { configuredSettings, publishedConfigs, configuredVehicles, publishedRouteQuote, publishedVehicleReferences, quoteWithConfig } from "./public-config";
 import { drafts, expireDrafts, type DraftBindings } from "./drafts";
 
 type Bindings = DraftBindings;
@@ -48,9 +48,12 @@ app.post("/api/quotes", async (context) => {
     );
   }
 
-  try { return context.json({ quote: quoteWithConfig(parsed.data, await publishedConfigs(context.env?.DB)) }); }
+  try {
+    const [configs,routeQuote]=await Promise.all([publishedConfigs(context.env?.DB),publishedRouteQuote(context.env?.DB,parsed.data)]);
+    return context.json({ quote: quoteWithConfig(parsed.data,configs,routeQuote) });
+  }
   catch (error) {
-    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE", "BOOKING_LIMIT_EXCEEDED"].includes(error.message)) return context.json({ error: error.message }, 422);
+    if (error instanceof Error && ["SERVICE_UNAVAILABLE", "VEHICLE_UNAVAILABLE", "BOOKING_LIMIT_EXCEEDED", "ROUTE_QUOTE_UNAVAILABLE"].includes(error.message)) return context.json({ error: error.message }, 422);
     throw error;
   }
 });

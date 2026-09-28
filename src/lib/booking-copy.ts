@@ -14,7 +14,7 @@ const en = {
   cargo: "What are you moving?", description: "Goods description", quantity: "Number of pieces", weight: "Total weight (kg)", volume: "Estimated total volume (m³)",
   dimensions: "Largest item dimensions, upright (cm)", length: "Length", width: "Width", height: "Height", fragile: "Fragile goods",
   capacityNote: "The weight and largest item must fit the vehicle. Combined loading space still needs carrier confirmation.",
-  vehicle: "Choose a vehicle", heavyVehicleTitle: "Heavy and cross-border vehicles", manualQuote: "Manual quote", heavyVehicleNote: "These reference vehicles are available for planning but do not yet have verified dimensions or automatic prices. Add the vehicle name under Other instructions if you need one.", testPrice: "Test placeholder price", testPriceNote: "This vehicle uses test-only placeholder dimensions and rates. The estimate is not a transport offer and must be replaced with confirmed commercial terms.", when: "When & extras", immediate: "As soon as available", scheduled: "Choose a date", schedule: "Pickup date and time",
+  vehicle: "Choose a vehicle", heavyVehicleTitle: "Heavy and cross-border vehicles", manualQuote: "Manual quote", heavyVehicleNote: "These reference vehicles are available for planning but do not yet have verified dimensions or automatic prices. Add the vehicle name under Other instructions if you need one.", testPrice: "Test placeholder price", testPriceNote: "This vehicle uses test-only placeholder dimensions and distance rates. A confirmed fixed route quote, when available, replaces the distance rate; dimensions remain test placeholders.", confirmedRoute: "Confirmed fixed route quote", confirmedRouteNote: "Owner-supplied customer-final route total in USD. No VAT or distance surcharge is added. Saving still creates a draft, not a transport order.", when: "When & extras", immediate: "As soon as available", scheduled: "Choose a date", schedule: "Pickup date and time",
   scheduleNote: "Choose 15 minutes to 30 days ahead. Time zone:", loading: "Driver loading help", helper: "Additional helper", priority: "Priority matching",
   notes: "Other instructions (optional)", calculate: "Calculate estimate", calculating: "Calculating…", save: "Save draft", saving: "Saving…",
   current: "Your estimate", empty: "Your estimate will appear here", emptyText: "Complete the route and goods details to calculate.",
@@ -32,7 +32,7 @@ const en = {
   failed: "We could not complete that request. Please try again.", conflict: "This draft changed in another tab. Reload it before saving again.",
   missing: "This draft is unavailable or belongs to another browser session.", limit: "This workspace holds up to 30 drafts. Delete one before saving a new draft.",
   rateLimited: "Too many requests. Please wait a minute and try again.", serverOffline: "Draft storage is temporarily unavailable. You can still calculate an estimate.",
-  consentRequired: "Confirm draft storage before saving.", savedQuote: "Estimate valid for 10 minutes. Recalculate if you change your plans."
+  consentRequired: "Confirm draft storage before saving.", savedQuote: "Estimate valid for 10 minutes. Recalculate if you change your plans.", routeUnavailable: "This Khorgos route has no quote for the selected vehicle, or includes additional drop-offs. Choose a quoted vehicle or request a manual quote."
 };
 const zh: typeof en = {
   title: "把这趟运输，安排清楚。", subtitle: "填写路线与货物、核对车型，保存草稿后随时回来继续。",
@@ -47,7 +47,7 @@ const zh: typeof en = {
   cargo: "这次运送什么？", description: "货物名称", quantity: "货物件数", weight: "货物总重量（公斤）", volume: "预计货物总体积（m³）",
   dimensions: "最大单件尺寸，保持直立（厘米）", length: "长", width: "宽", height: "高", fragile: "包含易碎物品",
   capacityNote: "总重量与最大单件须符合车型限制；全部货物的实际装载空间仍需承运方确认。",
-  vehicle: "选择合适的车型", heavyVehicleTitle: "重型与跨境车型", manualQuote: "人工报价", heavyVehicleNote: "以下为可规划的参考车型，尺寸与自动价格尚未核定。如需使用，请在“其他运输说明”中填写车型名称。", testPrice: "测试占位价格", testPriceNote: "该车型使用仅供系统测试的占位尺寸与费率；估价不构成运输报价，后续必须替换为确认后的商业条款。", when: "时间与附加服务", immediate: "尽快安排", scheduled: "指定日期", schedule: "预计提货日期与时间",
+  vehicle: "选择合适的车型", heavyVehicleTitle: "重型与跨境车型", manualQuote: "人工报价", heavyVehicleNote: "以下为可规划的参考车型，尺寸与自动价格尚未核定。如需使用，请在“其他运输说明”中填写车型名称。", testPrice: "测试占位价格", testPriceNote: "该车型的尺寸与按里程费率仅供系统测试；有已确认固定线路报价时会优先使用线路价，但尺寸仍为测试占位值。", confirmedRoute: "已确认固定线路报价", confirmedRouteNote: "采用用户提供的 USD 客户最终线路总价，不再叠加增值税或里程费。保存仍只形成草稿，不会生成运输订单。", when: "时间与附加服务", immediate: "尽快安排", scheduled: "指定日期", schedule: "预计提货日期与时间",
   scheduleNote: "可选择 15 分钟后至未来 30 天内。当前设备时区：", loading: "司机协助装卸", helper: "额外搬运人员", priority: "优先匹配",
   notes: "其他运输说明（选填）", calculate: "计算估价", calculating: "计算中…", save: "保存草稿", saving: "保存中…",
   current: "本次估价", empty: "准备好就可以估价", emptyText: "填写路线和货物资料后，这里会显示费用明细。",
@@ -65,12 +65,12 @@ const zh: typeof en = {
   failed: "本次操作未能完成，请稍后重试。", conflict: "这份草稿已在其他标签页修改，请重新打开后再保存。",
   missing: "找不到这份草稿，可能已到期、已删除或属于另一浏览器。", limit: "当前最多保存 30 份草稿，请先删除不需要的草稿。",
   rateLimited: "操作较频繁，请一分钟后重试。", serverOffline: "草稿保存暂时不可用，你仍可计算估价。",
-  consentRequired: "请先确认草稿保存说明。", savedQuote: "估价有效期 10 分钟。如计划有变化，请重新计算。"
+  consentRequired: "请先确认草稿保存说明。", savedQuote: "估价有效期 10 分钟。如计划有变化，请重新计算。", routeUnavailable: "该霍尔果斯线路对所选车型暂无报价，或包含额外送达点。请选择已有报价的车型，或申请人工报价。"
 };
 
 export const bookingCopy = (language: Language) => language === "zh" ? zh : en;
 export function bookingError(code: string, language: Language, parameters: BookingParameters = defaultParameters) {
   const t = bookingCopy(language);
-  const messages: Record<string, string> = { VERSION_CONFLICT: t.conflict, IDEMPOTENCY_CONFLICT: t.conflict, DRAFT_NOT_FOUND: t.missing, DRAFT_LIMIT_REACHED: t.limit, RATE_LIMITED: t.rateLimited, STORAGE_UNAVAILABLE: t.serverOffline, INVALID_BOOKING: t.invalid, INVALID_SCHEDULE: language === "zh" ? `请选择提前 ${parameters.minScheduleMinutes} 分钟至 ${parameters.maxScheduleDays} 天内的提货时间；规则可能已更新，请刷新核对。` : `Schedule ${parameters.minScheduleMinutes} minutes to ${parameters.maxScheduleDays} days ahead. Rules may have changed; refresh to verify.`, BOOKING_LIMIT_EXCEEDED: language === "zh" ? "预约参数已更新，请刷新并核对里程及送达点数量后重试。" : "Booking limits changed. Refresh and check the distance and drop-off count." };
+  const messages: Record<string, string> = { VERSION_CONFLICT: t.conflict, IDEMPOTENCY_CONFLICT: t.conflict, DRAFT_NOT_FOUND: t.missing, DRAFT_LIMIT_REACHED: t.limit, RATE_LIMITED: t.rateLimited, STORAGE_UNAVAILABLE: t.serverOffline, INVALID_BOOKING: t.invalid, INVALID_SCHEDULE: language === "zh" ? `请选择提前 ${parameters.minScheduleMinutes} 分钟至 ${parameters.maxScheduleDays} 天内的提货时间；规则可能已更新，请刷新核对。` : `Schedule ${parameters.minScheduleMinutes} minutes to ${parameters.maxScheduleDays} days ahead. Rules may have changed; refresh to verify.`, BOOKING_LIMIT_EXCEEDED: language === "zh" ? "预约参数已更新，请刷新并核对里程及送达点数量后重试。" : "Booking limits changed. Refresh and check the distance and drop-off count.", ROUTE_QUOTE_UNAVAILABLE: t.routeUnavailable };
   return messages[code] ?? t.failed;
 }
